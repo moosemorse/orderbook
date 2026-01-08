@@ -1,26 +1,24 @@
-#include <iostream>
-#include <map>
-#include <set>
-#include <list>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <ctime>
 #include <deque>
-#include <queue>
-#include <stack>
-#include <limits>
-#include <string>
-#include <vector>
-#include <numeric>
-#include <iostream>
-#include <algorithm>
-#include <unordered_map>
-#include <memory>
-#include <variant>
-#include <optional>
-#include <tuple>
 #include <format>
-
-#include <cstdint>
+#include <iostream>
+#include <limits>
+#include <list>
+#include <map>
+#include <memory>
+#include <numeric>
+#include <optional>
+#include <queue>
+#include <set>
+#include <stack>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <variant>
+#include <vector>
 
 enum class OrderType
 {
