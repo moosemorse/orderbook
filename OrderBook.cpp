@@ -19,3 +19,27 @@
 #include <optional>
 #include <tuple>
 #include <format>
+
+#include <cstdint>
+
+enum class OrderType
+{
+  GoodTillCancel,
+  FillAndKill
+};
+
+enum class Side
+{
+  Buy,
+  Sell
+};
+
+// some aliases for better readability
+using Price = std::int32_t;
+using Quantity = std::uint32_t;
+using OrderId = std::uint64_t;
+
+int main()
+{
+  return 0;
+}
