@@ -163,6 +163,8 @@ Trades OrderBook::AddOrder(OrderPointer order)
   // update global order map with new order
   orders_.insert({order->GetOrderId(), OrderEntry{order, iterator}});
 
+  OnOrderAdded(order);
+
   // finally, try match orders as result of adding new order
   return MatchOrders();
 }
@@ -213,6 +215,7 @@ Trades OrderBook::MatchOrder(OrderModify order)
 
 std::size_t OrderBook::Size() const
 {
+  std::scoped_lock ordersLock{ordersMutex_};
   return orders_.size();
 }
 
