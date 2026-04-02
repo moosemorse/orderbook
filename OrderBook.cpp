@@ -30,7 +30,8 @@ void OrderBook::PruneGoodForDayOrders()
     {
       std::unique_lock ordersLock{ordersMutex_};
 
-      if (shutdownConditionVariable_.wait_for(ordersLock, till) == std::cv_status::no_timeout)
+      if (shutdown_.load(std::memory_order_acquire) ||
+          shutdownConditionVariable_.wait_for(ordersLock, till) == std::cv_status::no_timeout)
         return;
     }
 
@@ -375,6 +376,7 @@ OrderBook::OrderBook()
 
 OrderBook::~OrderBook()
 {
+  shutdown_.store(true, std::memory_order_release);
   shutdownConditionVariable_.notify_one();
   ordersPruneThread_.join();
 }
