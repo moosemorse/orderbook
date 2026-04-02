@@ -55,6 +55,7 @@ Requires GCC or Clang with C++20 support.
 - [X] Chore: re-organise structure of files using guide (https://www.studyplan.dev/cmake/organizing-a-cpp-project)
 - [ ] Refactor: remove duplicate code in some places (erase logic)
 - [ ] Test suite
+- [ ] Update CI for test suite
 
 ## Ideas (not immediate todos but could be fun ways to extend project):
 - [ ] Use networking as a client to submit order onto orderbook e.g. develop a C++ HTTP server using crow, cpp-httplib
