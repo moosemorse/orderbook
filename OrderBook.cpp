@@ -94,6 +94,46 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
     eraseOrderFromPriceLevel(bids_, order->GetPrice());
 }
 
+// if order cancelled, quantity from that order removed at price level
+void OrderBook::OnOrderCancelled(OrderPointer order)
+{
+  UpdateLevelData(order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
+}
+
+// if order added, quantity of new order added at that price level
+void OrderBook::OnOrderAdded(OrderPointer order)
+{
+  UpdateLevelData(order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
+}
+
+// remove quantity at that price level based on matched order
+// if order matched, we dont change ref count at that price level
+void OrderBook::OnOrderMatched(Price price, Quantity quantity, bool isFullyFilled)
+{
+  UpdateLevelData(price, quantity, isFullyFilled ? LevelData::Action::Remove : LevelData::Action::Match);
+}
+
+// update price level data table by updating ref count and quantity
+// if no more references at the price level erase entry
+void OrderBook::UpdateLevelData(Price price, Quantity quantity, LevelData::Action action)
+{
+  auto &data = data_[price];
+
+  data.count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1
+                                                                                             : 0;
+  if (action == LevelData::Action::Remove || action == LevelData::Action::Match)
+  {
+    data.quantity_ -= quantity;
+  }
+  else
+  {
+    data.quantity_ += quantity;
+  }
+
+  if (data.count_ == 0)
+    data_.erase(price);
+}
+
 Trades OrderBook::AddOrder(OrderPointer order)
 {
   // c++20: contains
