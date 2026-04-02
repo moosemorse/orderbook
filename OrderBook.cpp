@@ -282,28 +282,37 @@ Trades OrderBook::MatchOrders()
     // try match orders
     while (bids.size() && asks.size())
     {
-      auto &bid = bids.front();
-      auto &ask = asks.front();
+      // make sure to take copy of shared_ptr (increments reference count)
+      // so even after pop_front destroys lists copy, our copies are saved
+      auto bid = bids.front();
+      auto ask = asks.front();
+
       Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
+
       bid->Fill(quantity);
       ask->Fill(quantity);
+
       // cleanup - TODO, duplicate code, abstract into erase order
       if (bid->IsFilled())
       {
         bids.pop_front();
         orders_.erase(bid->GetOrderId());
       }
+
       // cleanup
       if (ask->IsFilled())
       {
         asks.pop_front();
         orders_.erase(ask->GetOrderId());
       }
+
       // further clean up for maps
       if (bids.empty())
         bids_.erase(bidPrice);
+
       if (asks.empty())
         asks_.erase(askPrice);
+
       trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
                              TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
     }
