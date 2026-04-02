@@ -4,9 +4,6 @@
 #include <ctime>
 #include <numeric>
 
-OrderBook::OrderBook()
-    : bids_{}, asks_{}, orders_{} {};
-
 // cancel any orders that are expired i.e. at end of trading day
 void OrderBook::PruneGoodForDayOrders()
 {
@@ -136,6 +133,8 @@ void OrderBook::UpdateLevelData(Price price, Quantity quantity, LevelData::Actio
 
 Trades OrderBook::AddOrder(OrderPointer order)
 {
+  std::scoped_lock ordersLock{ordersMutex_};
+
   // c++20: contains
   if (orders_.contains(order->GetOrderId()))
     return {};
@@ -179,14 +178,21 @@ void OrderBook::CancelOrder(OrderId orderId)
 // public api to match order on modified order
 // check that this modified is in order book
 // and then cancel old order and match new modified order
-Trades OrderBook::MatchOrder(OrderModify order)
+Trades OrderBook::ModifyOrder(OrderModify order)
 {
-  if (!orders_.contains(order.GetOrderId()))
-    return {};
+  OrderType orderType;
+  {
+    std::scoped_lock ordersLock{ordersMutex_};
 
-  const auto &[existingOrder, _] = orders_.at(order.GetOrderId());
+    if (!orders_.contains(order.GetOrderId()))
+      return {};
+
+    const auto &[existingOrder, _] = orders_.at(order.GetOrderId());
+    orderType = existingOrder->GetOrderType();
+  }
+
   CancelOrder(order.GetOrderId());
-  return AddOrder(order.ToOrderPointer(existingOrder->GetOrderType()));
+  return AddOrder(order.ToOrderPointer(orderType));
 }
 
 std::size_t OrderBook::Size() const
@@ -220,6 +226,44 @@ OrderBookLevelInfos OrderBook::GetOrderInfos() const
     askInfos.push_back(CreateLevelInfos(price, orders));
 
   return OrderBookLevelInfos{bidInfos, askInfos};
+}
+
+bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
+{
+  if (!CanMatch(side, price))
+    return false;
+
+  std::optional<Price> threshold;
+
+  if (side == Side::Buy)
+  {
+    const auto [askPrice, _] = *asks_.begin();
+    threshold = askPrice;
+  }
+  else
+  {
+    const auto [bidPrice, _] = *bids_.begin();
+    threshold = bidPrice;
+  }
+
+  for (const auto &[levelPrice, levelData] : data_)
+  {
+    if (threshold.has_value() &&
+        ((side == Side::Buy && threshold.value() > levelPrice) ||
+         (side == Side::Sell && threshold.value() < levelPrice)))
+      continue;
+
+    if ((side == Side::Buy && levelPrice > price) ||
+        (side == Side::Sell && levelPrice < price))
+      continue;
+
+    if (quantity <= levelData.quantity_)
+      return true;
+
+    quantity -= levelData.quantity_;
+  }
+
+  return false;
 }
 
 // try to match a side with given price to other side
@@ -325,11 +369,11 @@ Trades OrderBook::MatchOrders()
   return trades;
 }
 
-OrderBook::Orderbook()
+OrderBook::OrderBook()
     : ordersPruneThread_{[this]
-                         { PruneGoodForDayOrders(); }} {}
+                         { PruneGoodForDayOrders(); }} {};
 
-OrderBook::~Orderbook()
+OrderBook::~OrderBook()
 {
   shutdownConditionVariable_.notify_one();
   ordersPruneThread_.join();
