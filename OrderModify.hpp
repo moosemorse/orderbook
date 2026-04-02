@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Order.hpp"
+
 // common apis: add, modify, cancel
 // add and cancel are simple, modify requires the ability to modify different
 // attributes like remaining price or side (side isn't necessary)

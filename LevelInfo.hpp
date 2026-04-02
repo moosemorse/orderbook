@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Aliases.hpp"
 #include <vector>
+
+#include "Aliases.hpp"
 
 /* LevelInfo useful for public APIs to interact with state of orderbook. */
 struct LevelInfo

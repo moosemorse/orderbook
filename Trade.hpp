@@ -6,6 +6,8 @@
 class Trade
 {
 public:
+  // TODO, define candidates by compiler
+  // separate this into module?
   Trade(const TradeInfo &bidTrade, const TradeInfo &askTrade)
       : bidTrade_{bidTrade}, askTrade_{askTrade}
   {
@@ -21,3 +23,6 @@ private:
   TradeInfo bidTrade_;
   TradeInfo askTrade_;
 };
+
+// note: one order can sweep many orders
+using Trades = std::vector<Trade>;
