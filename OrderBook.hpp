@@ -74,7 +74,7 @@ public:
   // common order apis on orderbook
   Trades AddOrder(OrderPointer order);
   void CancelOrder(OrderId orderId);
-  Trades MatchOrder(OrderModify order);
+  Trades ModifyOrder(OrderModify order);
 
   // debugging/less useful feat
   std::size_t Size() const;
