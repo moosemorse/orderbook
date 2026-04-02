@@ -56,6 +56,44 @@ void OrderBook::PruneGoodForDayOrders()
   }
 }
 
+// helper to cancel a vector of orders
+void OrderBook::CancelOrders(OrderIds orderIds)
+{
+  std::scoped_lock ordersLock{ordersMutex_};
+
+  for (const auto &orderId : orderIds)
+    CancelOrderInternal(orderId);
+}
+
+// cancel order by
+// 1. removing from global orders table by erasing it
+// 2. find which table has order and erase it there too
+// 3. if price level at that table has no more orders erase entire price level
+void OrderBook::CancelOrderInternal(OrderId orderId)
+{
+  if (!orders_.contains(orderId))
+    return;
+
+  const auto &[order, it] = orders_.at(orderId);
+  orders_.erase(orderId);
+
+  // I hate this, asks and bids have different signatures due to comparators
+  // so we can abstract this into lambda and cant use ternary
+
+  auto eraseOrderFromPriceLevel = [&](auto &orders, Price price)
+  {
+    auto &level = orders.at(price);
+    level.erase(it);
+    if (level.empty())
+      orders.erase(price);
+  };
+
+  if (order->GetSide() == Side::Sell)
+    eraseOrderFromPriceLevel(asks_, order->GetPrice());
+  else
+    eraseOrderFromPriceLevel(bids_, order->GetPrice());
+}
+
 Trades OrderBook::AddOrder(OrderPointer order)
 {
   // c++20: contains
