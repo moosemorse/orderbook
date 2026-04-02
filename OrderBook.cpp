@@ -183,7 +183,7 @@ struct TradeInfo
 class Trade
 {
 public:
-  Trade(const TradeInfo& bidTrade, const TradeInfo& askTrade)
+  Trade(const TradeInfo &bidTrade, const TradeInfo &askTrade)
       : bidTrade_{bidTrade}, askTrade_{askTrade}
   {
   }
@@ -197,6 +197,51 @@ public:
 private:
   TradeInfo bidTrade_;
   TradeInfo askTrade_;
+};
+
+// note: one order can sweep many orders
+using Trades = std::vector<Trade>;
+
+class Orderbook
+{
+private:
+
+  struct OrderEntry
+  {
+    OrderPointer order_{nullptr};
+    OrderPointers::iterator location_;
+  };
+
+  // map to represent bids and asks
+  // bids sorted in descending order from best bid
+  // asks sorted in ascending order from best ask
+  // e.g. the level with the lowest price is our best ask <- prefer to match
+  std::map<Price, OrderPointers, std::greater<Price>> bids_;
+  std::map<Price, OrderPointers, std::less<Price>> asks_;
+  std::unordered_map<OrderId, OrderEntry> orders_;
+
+  // try to match a side with given price to other side
+  // e.g. a buy order at some price is valid if we can find that the best
+  // ask is less than what they want
+  // TODO? Refactor to pick map and condition based on side
+  bool CanMatch(Side side, Price price) const
+  {
+    if (side == Side::Buy)
+    {
+      if (asks_.empty()) return false;
+
+      const auto& [bestAsk, _] = *asks_.begin();
+      return price >= bestAsk;
+    }
+    else
+    {
+      if (bids_.empty()) return false;
+
+      const auto& [bestBid, _] = *bids_.begin();
+      return price <= bestBid;
+    }
+  }
+
 };
 
 int
