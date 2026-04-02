@@ -119,6 +119,8 @@ public:
     return GetInitialQuantity() - GetRemainingQuantity();
   }
 
+  bool IsFilled() const { return GetRemainingQuantity() == 0; }
+
   void Fill(Quantity quantity)
   {
     if (quantity > GetRemainingQuantity()) // note, std::format works by {} being replaced by *args
@@ -239,6 +241,58 @@ private:
 
       const auto& [bestBid, _] = *bids_.begin();
       return price <= bestBid;
+    }
+  }
+
+  Trades MatchOrders()
+  {
+    Trades trades;
+    trades.reserve(orders_.size()) // optimistic, orders_.size predicts we have that many trades
+
+    while (true)
+    {
+      if (bids_.empty() || asks_.empty()) break;
+
+      // iterator from ordered maps
+      auto& [bidPrice, bids] = *bids_.begin();
+      auto& [askPrice, asks] = *asks_.begin();
+      
+      // preemptive break
+      if (bidPrice < askPrice) break;
+
+      // try match orders
+      while (bids.size() && asks.size())
+      {
+        auto& bid = bids.front();
+        auto& ask = asks.front();
+
+        Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
+
+        bid->Fill(quantity);
+        ask->Fill(quantity);
+        
+        // cleanup - TODO, duplicate code, abstract into erase order 
+        if (bid->IsFilled())
+        {
+          bids.pop_front();
+          orders_.erase(bid->GetOrderId());
+        }
+
+        // cleanup
+        if (ask->IsFilled())
+        {
+          asks.pop_front();
+          orders_.erase(ask->GetOrderId());
+        }
+        
+        // further clean up for maps
+        if (bids.empty()) bids_.erase(bidPrice);
+
+        if (asks.empty()) asks_.erase(askPrice);
+
+        trades.push_back(Trade{ TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity }, 
+            TradeInfo { ask->GetOrderId(), ask->GetPrice(), quantity }});
+      }
     }
   }
 
