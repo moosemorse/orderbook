@@ -320,7 +320,8 @@ private:
   }
 
 public:
-  Orderbook() : bids_{}, asks_{}, orders_{} {};
+  Orderbook()
+      : bids_{}, asks_{}, orders_{} {};
   Trades AddOrder(OrderPointer order)
   {
     // c++20: contains
@@ -404,7 +405,7 @@ public:
     LevelInfos bidInfos, askInfos;
     bidInfos.reserve(orders_.size());
     askInfos.reserve(orders_.size());
-    
+
     // A level info at some price, and we accumulate all quantities at the level
     // make sure to get remaining
     auto CreateLevelInfos = [](Price price, const OrderPointers &orders)
@@ -413,7 +414,7 @@ public:
                                               [](Quantity runningSum, const OrderPointer &order)
                                               { return runningSum + order->GetRemainingQuantity(); })};
     };
-    
+
     // accumulate level infos for each bids and asks
     //
     for (const auto &[price, orders] : bids_)
@@ -430,7 +431,7 @@ int main()
 {
   // simple main suite
   Orderbook orderbook;
-  const OrderId orderId {1};
+  const OrderId orderId{1};
   orderbook.AddOrder(std::make_shared<Order>(OrderType::GoodTillCancel, orderId, Side::Buy, 100, 10));
   std::cout << orderbook.Size() << std::endl; // 1
   orderbook.CancelOrder(orderId);
