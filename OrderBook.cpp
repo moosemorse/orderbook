@@ -171,33 +171,9 @@ Trades OrderBook::AddOrder(OrderPointer order)
 
 void OrderBook::CancelOrder(OrderId orderId)
 {
-  if (!orders_.contains(orderId))
-    return;
+  std::scoped_lock ordersLock{ordersMutex_};
 
-  // get order by orderId
-  const auto &[order, iterator] = orders_.at(orderId);
-  orders_.erase(orderId); // clear from map
-
-  // update respective bid/ask table
-  // look at order at price level and remove cancelled order from
-  // that level, if no more orders at price level we can erase
-  // existing price level
-  if (order->GetSide() == Side::Sell)
-  {
-    auto price = order->GetPrice();
-    auto &orders = asks_.at(price);
-    orders.erase(iterator);
-    if (orders.empty())
-      asks_.erase(price);
-  }
-  else
-  {
-    auto price = order->GetPrice();
-    auto &orders = bids_.at(price);
-    orders.erase(iterator);
-    if (orders.empty())
-      bids_.erase(price);
-  }
+  CancelOrderInternal(orderId);
 }
 
 // public api to match order on modified order
