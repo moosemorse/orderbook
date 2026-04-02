@@ -136,6 +136,18 @@ private:
   Quantity remainingQuantity_;
 };
 
+// because we are storing one Order in multiple data structures in our order book
+// we're going to want to use reference semantics (orders dict and ask/bids dict)
+using OrderPointer = std::shared_ptr<Order>;
+
+// list for order data structure, because a list gives an iterator which cannot
+// be invalidated no matter how large it grows (alternative is vector, TODO?)
+using OrderPointers = std::list<OrderPointer>;
+
+// common apis: add, modify, cancel
+// add and cancel are simple, modify requires the ability to modify different
+// attributes like remaining price or side (side isn't necessary)
+
 int main()
 {
   return 0;
