@@ -320,6 +320,7 @@ private:
   }
 
 public:
+  Orderbook() : bids_{}, asks_{}, orders_{} {};
   Trades AddOrder(OrderPointer order)
   {
     // c++20: contains
@@ -335,13 +336,13 @@ public:
     {
       auto &orders = bids_[order->GetPrice()];
       orders.push_back(order);
-      iterator = std::next(orders.begin(), orders.size() - 1);
+      iterator = std::prev(orders.end());
     }
     else
     {
       auto &orders = asks_[order->GetPrice()];
       orders.push_back(order);
-      iterator = std::next(orders.begin(), orders.size() - 1);
+      iterator = std::prev(orders.end());
     }
 
     // update global order map with new order
@@ -409,7 +410,7 @@ public:
     auto CreateLevelInfos = [](Price price, const OrderPointers &orders)
     {
       return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,
-                                              [](std::size_t runningSum, const OrderPointer &order)
+                                              [](Quantity runningSum, const OrderPointer &order)
                                               { return runningSum + order->GetRemainingQuantity(); })};
     };
     
