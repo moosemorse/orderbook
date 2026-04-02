@@ -16,6 +16,8 @@ jobs:
     # TODO? Upload a build artifact
     steps:
     - uses: actions/checkout@v4
+    - name: checkout repo
+      uses: actions/checkout@main
     #- name: configure
     #  run: ./configure
     - name: make
