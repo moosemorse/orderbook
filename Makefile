@@ -1,9 +1,10 @@
 CXX      := g++
 CXXFLAGS := -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
  
-TARGET   := orderbook
-SRC      := main.cpp OrderBook.cpp
-INC      := -I.
+BUILDDIR := build
+TARGET   := $(BUILDDIR)/orderbook
+SRC      := src/*
+INC      := -I. -Iinclude
  
 # Debug build (default)
 .PHONY: all
@@ -15,7 +16,10 @@ all: $(TARGET)
 release: CXXFLAGS += -O2 -DNDEBUG
 release: $(TARGET)
  
-$(TARGET): $(SRC)
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
+
+$(TARGET): $(SRC) | $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) $(INC) -o $@ $^
  
 .PHONY: clean
