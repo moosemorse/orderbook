@@ -141,6 +141,8 @@ Trades OrderBook::AddOrder(OrderPointer order)
     return {};
   if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice()))
     return {};
+  if (order->GetOrderType() == OrderType::FillOrKill && !CanFullyFill(order->GetSide(), order->GetPrice(), order->GetInitialQuantity()))
+    return {};
 
   OrderPointers::iterator iterator;
 
@@ -308,28 +310,48 @@ Trades OrderBook::MatchOrders()
 
       // further clean up for maps
       if (bids.empty())
+      {
         bids_.erase(bidPrice);
+        data_.erase(bidPrice);
+      }
 
       if (asks.empty())
+      {
         asks_.erase(askPrice);
+        data_.erase(askPrice);
+      }
 
-      trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
-                             TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
+      trades.push_back(Trade{
+          TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
+          TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
+
+      OnOrderMatched(bid->GetPrice(), quantity, bid->IsFilled());
+      OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
     }
   }
   if (!bids_.empty())
   {
     auto &[_, bids] = *bids_.begin();
     auto &order = bids.front();
-    // if (order->GetOrderType() == OrderType::FillAndKill)
-    //    CancelOrder(order->GetOrderId()); // TODO implement
+    if (order->GetOrderType() == OrderType::FillAndKill)
+      CancelOrder(order->GetOrderId());
   }
   if (!asks_.empty())
   {
     auto &[_, asks] = *asks_.begin();
     auto &order = asks.front();
-    // if (order->GetOrderType() == OrderType::FillAndKill)
-    //   CancelOrder(order->GetOrderId()); // TODO implement
+    if (order->GetOrderType() == OrderType::FillAndKill)
+      CancelOrder(order->GetOrderId());
   }
   return trades;
+}
+
+OrderBook::Orderbook()
+    : ordersPruneThread_{[this]
+                         { PruneGoodForDayOrders(); }} {}
+
+OrderBook::~Orderbook()
+{
+  shutdownConditionVariable_.notify_one();
+  ordersPruneThread_.join();
 }
