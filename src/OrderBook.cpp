@@ -139,6 +139,23 @@ Trades OrderBook::AddOrder(OrderPointer order)
   // c++20: contains
   if (orders_.contains(order->GetOrderId()))
     return {};
+
+  if (order->GetOrderType() == OrderType::Market)
+  {
+    if (order->GetSide() == Side::Buy && !asks_.empty())
+    {
+      const auto &[worstAsk, _] = *asks_.rbegin();
+      order->ToGoodTillCancel(worstAsk);
+    }
+    else if (order->GetSide() == Side::Sell && !bids_.empty())
+    {
+      const auto &[worstBid, _] = *bids_.rbegin();
+      order->ToGoodTillCancel(worstBid);
+    }
+    else
+      return {};
+  }
+
   if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice()))
     return {};
   if (order->GetOrderType() == OrderType::FillOrKill && !CanFullyFill(order->GetSide(), order->GetPrice(), order->GetInitialQuantity()))

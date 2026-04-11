@@ -5,9 +5,10 @@
 #include <list>
 #include <memory>
 
+#include "Aliases.hpp"
+#include "Constants.hpp"
 #include "OrderType.hpp"
 #include "Side.hpp"
-#include "Aliases.hpp"
 
 /* Now we need to describe the things we add to an order book which are order objects. */
 class Order
@@ -19,6 +20,10 @@ public:
       : orderType_{orderType}, orderId_{orderId}, side_{side}, price_{price}, initialQuantity_{quantity}, remainingQuantity_{quantity}
   {
   }
+
+  // support market order types, price is not important -> rename to classic factory style?
+  Order(OrderId orderId, Side side, Quantity quantity)
+      : Order(OrderType::Market, orderId, side, Constants::InvalidPrice, quantity) {}
 
   // note: const just before func body means that the function is part of a class
   // and cant change any members of that class AND only const objects can call these functions
@@ -67,6 +72,17 @@ public:
       throw std::logic_error(std::format("Order ({}) cannot be filled for more than its remaining quantity.", GetOrderId()));
 
     remainingQuantity_ -= quantity;
+  }
+
+  // change ordertype to goodTillCancel and price of order to price passed in
+  // PRE: used to only convert market orders
+  void ToGoodTillCancel(Price price)
+  {
+    if (GetOrderType() != OrderType::Market)
+      throw std::logic_error(std::format("Order ({}) cannot have its price adjusted, only market orders can.", GetOrderId()));
+
+    price_ = price;
+    orderType_ = OrderType::GoodTillCancel;
   }
 
 private:
