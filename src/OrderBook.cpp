@@ -8,28 +8,32 @@
 void OrderBook::PruneGoodForDayOrders()
 {
   using namespace std::chrono;
-  const auto end = hours(16);
+  const auto end = hours(16); // todo, magic number, 4pm end of trading day
 
   while (true)
   {
+    // get struct for calendar data and time
     const auto now = system_clock::now();
     const auto now_c = system_clock::to_time_t(now);
     std::tm now_parts;
     localtime_r(&now_c, &now_parts);
 
+    // increment day counter if past assigned end time
     if (now_parts.tm_hour >= end.count())
       now_parts.tm_mday += 1;
 
+    // simulate end of day in struct now_parts
     now_parts.tm_hour = static_cast<int>(end.count());
     now_parts.tm_min = 0;
     now_parts.tm_sec = 0;
 
+    // find time remaining till end of day using now_parts
     auto next = system_clock::from_time_t(mktime(&now_parts));
     auto till = next - now + milliseconds(100);
 
     {
       std::unique_lock ordersLock{ordersMutex_};
-
+      // finish if orderbook has shutdown or shutdown signalled while waiting
       if (shutdown_.load(std::memory_order_acquire) ||
           shutdownConditionVariable_.wait_for(ordersLock, till) == std::cv_status::no_timeout)
         return;
@@ -37,6 +41,7 @@ void OrderBook::PruneGoodForDayOrders()
 
     OrderIds orderIds;
 
+    // collect all order ids that are good for day to cancel them
     {
       std::scoped_lock ordersLock{ordersMutex_};
       for (const auto &[_, entry] : orders_)
@@ -55,6 +60,7 @@ void OrderBook::PruneGoodForDayOrders()
 }
 
 // helper to cancel a vector of orders
+// advantage, only acquire lock once for sequence of orderIds
 void OrderBook::CancelOrders(OrderIds orderIds)
 {
   std::scoped_lock ordersLock{ordersMutex_};
@@ -91,6 +97,13 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
   else
     eraseOrderFromPriceLevel(bids_, order->GetPrice());
 }
+
+/* Book-keeping: updating level data.
+   > OnOrderCancelled
+   > OnOrderAdded
+   > OnOrderMatched
+  LOCK MUST BE HELD BEFORE UPADTING DATA TABLE TO PREVENT RACE CONDITIONS!
+*/
 
 // if order cancelled, quantity from that order removed at price level
 void OrderBook::OnOrderCancelled(OrderPointer order)
@@ -140,6 +153,8 @@ Trades OrderBook::AddOrder(OrderPointer order)
   if (orders_.contains(order->GetOrderId()))
     return {};
 
+  // market order semantics, its a goodTillCancel order
+  // fake it as a limit order at worst possible price and sweep entire book
   if (order->GetOrderType() == OrderType::Market)
   {
     if (order->GetSide() == Side::Buy && !asks_.empty())
@@ -153,7 +168,7 @@ Trades OrderBook::AddOrder(OrderPointer order)
       order->ToGoodTillCancel(worstBid);
     }
     else
-      return {};
+      return {}; // should we return error instead here?
   }
 
   if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice()))
@@ -163,7 +178,7 @@ Trades OrderBook::AddOrder(OrderPointer order)
 
   OrderPointers::iterator iterator;
 
-  // add order to respective map and select iterator for map (bids/asks)
+  // add order to respective map and se lect iterator for map (bids/asks)
   if (order->GetSide() == Side::Buy)
   {
     auto &orders = bids_[order->GetPrice()];
@@ -387,6 +402,7 @@ Trades OrderBook::MatchOrders()
   return trades;
 }
 
+// start thread that cancels goodForDay orders at end of day
 OrderBook::OrderBook()
     : ordersPruneThread_{[this]
                          { PruneGoodForDayOrders(); }} {};
