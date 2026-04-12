@@ -27,11 +27,15 @@ target_include_directories(orderbook PRIVATE include .)
 
 enable_testing()
 
-file(GLOB TEST_SOURCES "tests/*.cpp")
+add_executable(
+    tests/orderbook_tests
+    tests/orderbook_test.cpp
+)
 
-add_executable(orderbook_tests ${TEST_SOURCES} ${LIB_SOURCES})
-target_include_directories(orderbook_tests PRIVATE include .)
-target_link_libraries(orderbook_tests GTest::gtest_main)
+target_link_libraries(
+    orderbook_tests
+    GTest::gtest_main
+)
 
 include(GoogleTest)
 gtest_discover_tests(orderbook_tests)
