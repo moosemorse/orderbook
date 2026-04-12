@@ -1,26 +1,21 @@
 name: C/C++ CI
-
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
 jobs:
   build:
-
     runs-on: ubuntu-latest
-    # pipeline steps are just to check if it builds
-    # next: make check -> make distcheck 
-    # im not sure yet what I can do with configure or if i need that
-    # TODO? Upload a build artifact
     steps:
     - uses: actions/checkout@v4
-    #- name: configure
-    #  run: ./configure
+ 
+    - name: configure
+      run: cmake -B build -S .
+ 
     - name: make
-      run: make
-    #- name: make check
-    #  run: make check
-    #- name: make distcheck
-    #  run: make distcheck
+      run: cmake --build build
+ 
+    - name: test
+      working-directory: build
+      run: ctest --output-on-failure
