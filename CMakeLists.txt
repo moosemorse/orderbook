@@ -13,6 +13,7 @@ include(FetchContent)
 FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
@@ -28,9 +29,12 @@ target_include_directories(orderbook PRIVATE include .)
 enable_testing()
 
 add_executable(
-    tests/orderbook_tests
-    tests/orderbook_test.cpp
+    orderbook_tests
+    tests/orderbook_tests.cpp
 )
+
+# for future, test files will need headers from main program
+target_include_directories(orderbook_tests PRIVATE include .)
 
 target_link_libraries(
     orderbook_tests
