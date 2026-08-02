@@ -44,11 +44,16 @@ make release  # optimised build
 make clean    # remove binary 
 ```
 
-Requires GCC or Clang with C++20 support.
+Requires GCC or Clang with C++20 support, and CMake >= 3.14.
 
-3. Find `orderbook` in `build/` directory and run with
+1. Find `orderbook` in `build/` directory and run with
 ```bash
-./orderbook
+./build/orderbook
+```
+
+1. Run the test suite with
+```bash
+./build/orderbook_tests
 ```
 
 ## Todos
