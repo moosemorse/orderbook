@@ -44,9 +44,9 @@ void OrderBook::PruneGoodForDayOrders()
     // collect all order ids that are good for day to cancel them
     {
       std::scoped_lock ordersLock{ordersMutex_};
-      for (const auto &[_, entry] : orders_)
+      for (const auto& [_, entry] : orders_)
       {
-        const auto &order = entry.order_;
+        const auto& order = entry.order_;
 
         if (order->GetOrderType() != OrderType::GoodForDay)
           continue;
@@ -65,7 +65,7 @@ void OrderBook::CancelOrders(OrderIds orderIds)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
-  for (const auto &orderId : orderIds)
+  for (const auto& orderId : orderIds)
     CancelOrderInternal(orderId);
 }
 
@@ -78,15 +78,15 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
   if (!orders_.contains(orderId))
     return;
 
-  const auto &[order, it] = orders_.at(orderId);
+  const auto& [order, it] = orders_.at(orderId);
   orders_.erase(orderId);
 
   // I hate this, asks and bids have different signatures due to comparators
   // so we can abstract this into lambda and cant use ternary
 
-  auto eraseOrderFromPriceLevel = [&](auto &orders, Price price)
+  auto eraseOrderFromPriceLevel = [&](auto& orders, Price price)
   {
-    auto &level = orders.at(price);
+    auto& level = orders.at(price);
     level.erase(it);
     if (level.empty())
       orders.erase(price);
@@ -128,10 +128,9 @@ void OrderBook::OnOrderMatched(Price price, Quantity quantity, bool isFullyFille
 // if no more references at the price level erase entry
 void OrderBook::UpdateLevelData(Price price, Quantity quantity, LevelData::Action action)
 {
-  auto &data = data_[price];
+  auto& data = data_[price];
 
-  data.count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1
-                                                                                             : 0;
+  data.count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1 : 0;
   if (action == LevelData::Action::Remove || action == LevelData::Action::Match)
   {
     data.quantity_ -= quantity;
@@ -159,12 +158,12 @@ Trades OrderBook::AddOrder(OrderPointer order)
   {
     if (order->GetSide() == Side::Buy && !asks_.empty())
     {
-      const auto &[worstAsk, _] = *asks_.rbegin();
+      const auto& [worstAsk, _] = *asks_.rbegin();
       order->ToGoodTillCancel(worstAsk);
     }
     else if (order->GetSide() == Side::Sell && !bids_.empty())
     {
-      const auto &[worstBid, _] = *bids_.rbegin();
+      const auto& [worstBid, _] = *bids_.rbegin();
       order->ToGoodTillCancel(worstBid);
     }
     else
@@ -173,7 +172,8 @@ Trades OrderBook::AddOrder(OrderPointer order)
 
   if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice()))
     return {};
-  if (order->GetOrderType() == OrderType::FillOrKill && !CanFullyFill(order->GetSide(), order->GetPrice(), order->GetInitialQuantity()))
+  if (order->GetOrderType() == OrderType::FillOrKill &&
+      !CanFullyFill(order->GetSide(), order->GetPrice(), order->GetInitialQuantity()))
     return {};
 
   OrderPointers::iterator iterator;
@@ -181,13 +181,13 @@ Trades OrderBook::AddOrder(OrderPointer order)
   // add order to respective map and se lect iterator for map (bids/asks)
   if (order->GetSide() == Side::Buy)
   {
-    auto &orders = bids_[order->GetPrice()];
+    auto& orders = bids_[order->GetPrice()];
     orders.push_back(order);
     iterator = std::prev(orders.end());
   }
   else
   {
-    auto &orders = asks_[order->GetPrice()];
+    auto& orders = asks_[order->GetPrice()];
     orders.push_back(order);
     iterator = std::prev(orders.end());
   }
@@ -220,7 +220,7 @@ Trades OrderBook::ModifyOrder(OrderModify order)
     if (!orders_.contains(order.GetOrderId()))
       return {};
 
-    const auto &[existingOrder, _] = orders_.at(order.GetOrderId());
+    const auto& [existingOrder, _] = orders_.at(order.GetOrderId());
     orderType = existingOrder->GetOrderType();
   }
 
@@ -243,19 +243,19 @@ OrderBookLevelInfos OrderBook::GetOrderInfos() const
 
   // A level info at some price, and we accumulate all quantities at the level
   // make sure to get remaining
-  auto CreateLevelInfos = [](Price price, const OrderPointers &orders)
+  auto CreateLevelInfos = [](Price price, const OrderPointers& orders)
   {
     return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,
-                                            [](Quantity runningSum, const OrderPointer &order)
+                                            [](Quantity runningSum, const OrderPointer& order)
                                             { return runningSum + order->GetRemainingQuantity(); })};
   };
 
   // accumulate level infos for each bids and asks
   //
-  for (const auto &[price, orders] : bids_)
+  for (const auto& [price, orders] : bids_)
     bidInfos.push_back(CreateLevelInfos(price, orders));
 
-  for (const auto &[price, orders] : asks_)
+  for (const auto& [price, orders] : asks_)
     askInfos.push_back(CreateLevelInfos(price, orders));
 
   return OrderBookLevelInfos{bidInfos, askInfos};
@@ -279,15 +279,13 @@ bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
     threshold = bidPrice;
   }
 
-  for (const auto &[levelPrice, levelData] : data_)
+  for (const auto& [levelPrice, levelData] : data_)
   {
-    if (threshold.has_value() &&
-        ((side == Side::Buy && threshold.value() > levelPrice) ||
-         (side == Side::Sell && threshold.value() < levelPrice)))
+    if (threshold.has_value() && ((side == Side::Buy && threshold.value() > levelPrice) ||
+                                  (side == Side::Sell && threshold.value() < levelPrice)))
       continue;
 
-    if ((side == Side::Buy && levelPrice > price) ||
-        (side == Side::Sell && levelPrice < price))
+    if ((side == Side::Buy && levelPrice > price) || (side == Side::Sell && levelPrice < price))
       continue;
 
     if (quantity <= levelData.quantity_)
@@ -310,7 +308,7 @@ bool OrderBook::CanMatch(Side side, Price price) const
     if (asks_.empty())
       return false;
 
-    const auto &[bestAsk, _] = *asks_.begin();
+    const auto& [bestAsk, _] = *asks_.begin();
     return price >= bestAsk;
   }
   else
@@ -318,7 +316,7 @@ bool OrderBook::CanMatch(Side side, Price price) const
     if (bids_.empty())
       return false;
 
-    const auto &[bestBid, _] = *bids_.begin();
+    const auto& [bestBid, _] = *bids_.begin();
     return price <= bestBid;
   }
 }
@@ -332,8 +330,8 @@ Trades OrderBook::MatchOrders()
     if (bids_.empty() || asks_.empty())
       break;
     // iterator from ordered maps
-    auto &[bidPrice, bids] = *bids_.begin();
-    auto &[askPrice, asks] = *asks_.begin();
+    auto& [bidPrice, bids] = *bids_.begin();
+    auto& [askPrice, asks] = *asks_.begin();
     // preemptive break
     if (bidPrice < askPrice)
       break;
@@ -377,9 +375,8 @@ Trades OrderBook::MatchOrders()
         data_.erase(askPrice);
       }
 
-      trades.push_back(Trade{
-          TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
-          TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
+      trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
+                             TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
 
       OnOrderMatched(bid->GetPrice(), quantity, bid->IsFilled());
       OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
@@ -387,15 +384,15 @@ Trades OrderBook::MatchOrders()
   }
   if (!bids_.empty())
   {
-    auto &[_, bids] = *bids_.begin();
-    auto &order = bids.front();
+    auto& [_, bids] = *bids_.begin();
+    auto& order = bids.front();
     if (order->GetOrderType() == OrderType::FillAndKill)
       CancelOrder(order->GetOrderId());
   }
   if (!asks_.empty())
   {
-    auto &[_, asks] = *asks_.begin();
-    auto &order = asks.front();
+    auto& [_, asks] = *asks_.begin();
+    auto& order = asks.front();
     if (order->GetOrderType() == OrderType::FillAndKill)
       CancelOrder(order->GetOrderId());
   }
@@ -403,9 +400,7 @@ Trades OrderBook::MatchOrders()
 }
 
 // start thread that cancels goodForDay orders at end of day
-OrderBook::OrderBook()
-    : ordersPruneThread_{[this]
-                         { PruneGoodForDayOrders(); }} {};
+OrderBook::OrderBook() : ordersPruneThread_{[this] { PruneGoodForDayOrders(); }} {};
 
 OrderBook::~OrderBook()
 {
