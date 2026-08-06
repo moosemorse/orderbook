@@ -78,7 +78,7 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
   if (!orders_.contains(orderId))
     return;
 
-  const auto& [order, it] = orders_.at(orderId);
+  const auto [order, it] = orders_.at(orderId);
   orders_.erase(orderId);
 
   // I hate this, asks and bids have different signatures due to comparators
@@ -362,24 +362,23 @@ Trades OrderBook::MatchOrders()
         orders_.erase(ask->GetOrderId());
       }
 
-      // further clean up for maps
-      if (bids.empty())
-      {
-        bids_.erase(bidPrice);
-        data_.erase(bidPrice);
-      }
-
-      if (asks.empty())
-      {
-        asks_.erase(askPrice);
-        data_.erase(askPrice);
-      }
-
       trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
                              TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
 
       OnOrderMatched(bid->GetPrice(), quantity, bid->IsFilled());
       OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
+    }
+    // further clean up for maps
+    if (bids.empty())
+    {
+      bids_.erase(bidPrice);
+      data_.erase(bidPrice);
+    }
+
+    if (asks.empty())
+    {
+      asks_.erase(askPrice);
+      data_.erase(askPrice);
     }
   }
   if (!bids_.empty())
@@ -387,14 +386,14 @@ Trades OrderBook::MatchOrders()
     auto& [_, bids] = *bids_.begin();
     auto& order = bids.front();
     if (order->GetOrderType() == OrderType::FillAndKill)
-      CancelOrder(order->GetOrderId());
+      CancelOrderInternal(order->GetOrderId());
   }
   if (!asks_.empty())
   {
     auto& [_, asks] = *asks_.begin();
     auto& order = asks.front();
     if (order->GetOrderType() == OrderType::FillAndKill)
-      CancelOrder(order->GetOrderId());
+      CancelOrderInternal(order->GetOrderId());
   }
   return trades;
 }

@@ -41,5 +41,8 @@ target_link_libraries(
     GTest::gtest_main
 )
 
+# test data files, tests resolve them relative to their working directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestFolder DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
 include(GoogleTest)
 gtest_discover_tests(orderbook_tests)
