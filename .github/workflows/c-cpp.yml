@@ -9,13 +9,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
- 
+
     - name: configure
       run: cmake -B build -S .
- 
+
     - name: make
-      run: cmake --build build
- 
+      run: cmake --build build -j
+
+    # tar keeps the executable bits, which upload-artifact drops on its own
+    - name: package build tree
+      run: tar -czf build.tar.gz build
+
+    - name: upload build tree
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-tree
+        path: build.tar.gz
+        retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: download build tree
+      uses: actions/download-artifact@v4
+      with:
+        name: build-tree
+
+    - name: unpack build tree
+      run: tar -xzf build.tar.gz
+
     - name: test
       working-directory: build
       run: ctest --output-on-failure
