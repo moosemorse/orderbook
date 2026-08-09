@@ -59,7 +59,7 @@ Requires GCC or Clang with C++20 support, and CMake >= 3.14.
 ## Todos
 - [X] Chore: re-organise structure of files using guide (https://www.studyplan.dev/cmake/organizing-a-cpp-project)
 - [ ] Refactor: remove duplicate code in some places (erase logic)
-- [ ] Test suite
+- [X] Test suite
 - [X] Update CI for test suite
 
 ## Ideas (not immediate todos but could be fun ways to extend project):
