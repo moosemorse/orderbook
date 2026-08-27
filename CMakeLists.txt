@@ -26,6 +26,10 @@ list(FILTER LIB_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 add_executable(orderbook src/main.cpp ${LIB_SOURCES})
 target_include_directories(orderbook PRIVATE include .)
 
+# benchmark harness (local perf measurement only, not part of CI)
+add_executable(orderbook_bench bench/main.cpp ${LIB_SOURCES})
+target_include_directories(orderbook_bench PRIVATE include . bench)
+
 enable_testing()
 
 add_executable(
