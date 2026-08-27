@@ -369,16 +369,24 @@ Trades OrderBook::MatchOrders()
       OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
     }
     // further clean up for maps
+    // NOTE: bidPrice/askPrice are references into the map node's key (from the
+    // structured binding above) - copy by value before erase(), since erasing
+    // the node frees the key and a second erase() using the now-dangling
+    // reference is a heap-use-after-free.
+    ////// TODO ?? bidPrice shouldn't become dangling reference if
+    //////         erase only removes the entry from the map
     if (bids.empty())
     {
-      bids_.erase(bidPrice);
-      data_.erase(bidPrice);
+      const Price bidPriceToErase = bidPrice;
+      bids_.erase(bidPriceToErase);
+      data_.erase(bidPriceToErase);
     }
 
     if (asks.empty())
     {
-      asks_.erase(askPrice);
-      data_.erase(askPrice);
+      const Price askPriceToErase = askPrice;
+      asks_.erase(askPriceToErase);
+      data_.erase(askPriceToErase);
     }
   }
   if (!bids_.empty())
