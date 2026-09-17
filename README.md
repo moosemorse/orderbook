@@ -56,6 +56,33 @@ Requires GCC or Clang with C++20 support, and CMake >= 3.14.
 ./build/orderbook_tests
 ```
 
+## Benchmarking
+
+`orderbook_bench` (`bench/`) constructs one `OrderBook`, generates a synthetic order-flow script up front, replays it on a pinned core, and reports throughput plus median/p99/p99.9 latency (combined and broken down by op type: Add/Cancel/Modify). It's a local measurement tool only - not run in CI, since shared CI runners produce noisy, unpinned, unrepresentative numbers.
+
+```bash
+make release
+./build/orderbook_bench --orders 5000000 --core 3
+# or: make bench ARGS="--orders 5000000 --core 3"
+```
+
+Flags (all optional):
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--orders` | 5000000 | measured ops |
+| `--warmup` | 500000 | unrecorded ops replayed first, to settle allocator/tree shape |
+| `--core` | 0 | core to pin to (`sched_setaffinity`) - required, not best-effort |
+| `--seed` | 42 | RNG seed, for reproducible runs |
+| `--target-depth` | 5000 | steady-state resting orders per side the generator aims for |
+| `--cancel-ratio` / `--modify-ratio` | 0.2 / 0.1 | op mix once book depth is in-band |
+| `--tick-spread` | 25 | stddev, in ticks, of order price offset from the synthetic mid |
+| `--csv PATH` | (none) | dump raw per-op latencies for offline analysis/plotting |
+
+The binary refuses to report numbers from a non-release (`NDEBUG` undefined) build - it prints a warning banner instead.
+
+**Getting stable numbers:** pin to an isolated/quiet core if possible (`isolcpus`, or at least a core with no other load), disable turbo boost and set the `performance` CPU governor (`sudo cpupower frequency-set --governor performance`), and close other work on the machine. `taskset -c N ./build/orderbook_bench --core N` as an outer pin is a cheap extra guard on top of the binary's own affinity call.
+
 ## Todos
 - [X] Chore: re-organise structure of files using guide (https://www.studyplan.dev/cmake/organizing-a-cpp-project)
 - [ ] Refactor: remove duplicate code in some places (erase logic)
