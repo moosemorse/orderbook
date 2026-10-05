@@ -234,6 +234,12 @@ std::size_t OrderBook::Size() const
   return orders_.size();
 }
 
+bool OrderBook::Contains(OrderId orderId) const
+{
+  std::scoped_lock ordersLock{ordersMutex_};
+  return orders_.contains(orderId);
+}
+
 // maybe useful for debugging/info later
 OrderBookLevelInfos OrderBook::GetOrderInfos() const
 {

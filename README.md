@@ -58,7 +58,9 @@ Requires GCC or Clang with C++20 support, and CMake >= 3.14.
 
 ## Benchmarking
 
-`orderbook_bench` (`bench/`) constructs one `OrderBook`, generates a synthetic order-flow script up front, replays it on a pinned core, and reports throughput plus median/p99/p99.9 latency (combined and broken down by op type: Add/Cancel/Modify). It's a local measurement tool only - not run in CI, since shared CI runners produce noisy, unpinned, unrepresentative numbers.
+`orderbook_bench` (`bench/`) constructs one `OrderBook`, generates a synthetic order-flow script up front, replays it on a pinned core, and reports throughput plus median/p99/p99.9 latency (combined and broken down by op type: Add/Cancel/Modify). The timing numbers are local-only - shared CI runners produce noisy, unpinned, unrepresentative numbers.
+
+The script is generated against a shadow `OrderBook`, so every cancel/modify targets an order that is genuinely still resting (the harness prints this as a hit-rate - anything under 100% means the workload is partly no-ops).
 
 ```bash
 make release
@@ -78,6 +80,10 @@ Flags (all optional):
 | `--cancel-ratio` / `--modify-ratio` | 0.2 / 0.1 | op mix once book depth is in-band |
 | `--tick-spread` | 25 | stddev, in ticks, of order price offset from the synthetic mid |
 | `--csv PATH` | (none) | dump raw per-op latencies for offline analysis/plotting |
+| `--check HEX` | (none) | exit 1 unless the run's fingerprint matches `HEX` |
+| `--check-every N` | (off) | check book invariants every N ops and exit 1 on the first violation (slows the run - don't use for timing) |
+
+**As a regression test:** every run prints a fingerprint (hash of trade count, traded quantity and final book state). The same seed and flags always give the same fingerprint, so a refactor that shouldn't change behaviour (memory pool, lock removal, ...) must leave it unchanged. `ctest` runs a small fixed-seed run with `--check` and `--check-every` as the `bench_fingerprint` test; if a change is *meant* to alter matching, re-run that command and update the expected value in `CMakeLists.txt`.
 
 The binary refuses to report numbers from a non-release (`NDEBUG` undefined) build - it prints a warning banner instead.
 
