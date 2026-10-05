@@ -18,13 +18,22 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# src dependencies
-file(GLOB LIB_SOURCES "src/*.cpp")
-list(FILTER LIB_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
+find_package(Threads REQUIRED)
+
+# the order book itself, compiled once and linked into every target below
+add_library(orderbook_lib STATIC src/OrderBook.cpp)
+target_include_directories(orderbook_lib PUBLIC include)
+target_link_libraries(orderbook_lib PUBLIC Threads::Threads)
 
 # main file (main.cpp)
-add_executable(orderbook src/main.cpp ${LIB_SOURCES})
-target_include_directories(orderbook PRIVATE include .)
+add_executable(orderbook src/main.cpp)
+target_link_libraries(orderbook PRIVATE orderbook_lib)
+
+# benchmark harness - timing numbers are local-only, but a small run's
+# fingerprint is checked in ctest (see bench_fingerprint below)
+add_executable(orderbook_bench bench/main.cpp)
+target_include_directories(orderbook_bench PRIVATE bench)
+target_link_libraries(orderbook_bench PRIVATE orderbook_lib)
 
 enable_testing()
 
@@ -33,11 +42,12 @@ add_executable(
     tests/orderbook_tests.cpp
 )
 
-# for future, test files will need headers from main program
-target_include_directories(orderbook_tests PRIVATE include .)
+# pch.h lives in the repo root
+target_include_directories(orderbook_tests PRIVATE .)
 
 target_link_libraries(
     orderbook_tests
+    orderbook_lib
     GTest::gtest_main
 )
 
@@ -46,3 +56,11 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestFolder DESTINATION ${CMAKE_CURRE
 
 include(GoogleTest)
 gtest_discover_tests(orderbook_tests)
+
+# regression check: a fixed-seed run must reproduce this fingerprint. If a
+# change is *meant* to alter matching behaviour, re-run the command and update it.
+# (generator uses <random> distributions, so the value is libstdc++-specific)
+add_test(
+    NAME bench_fingerprint
+    COMMAND orderbook_bench --orders 100000 --warmup 10000 --core 0 --check-every 1000 --check 0c4bd39513c593d8
+)

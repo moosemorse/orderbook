@@ -234,6 +234,12 @@ std::size_t OrderBook::Size() const
   return orders_.size();
 }
 
+bool OrderBook::Contains(OrderId orderId) const
+{
+  std::scoped_lock ordersLock{ordersMutex_};
+  return orders_.contains(orderId);
+}
+
 // maybe useful for debugging/info later
 OrderBookLevelInfos OrderBook::GetOrderInfos() const
 {
@@ -369,16 +375,19 @@ Trades OrderBook::MatchOrders()
       OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
     }
     // further clean up for maps
+    // bidPrice/askPrice reference the map node's key - copy before erase(), which frees it
     if (bids.empty())
     {
-      bids_.erase(bidPrice);
-      data_.erase(bidPrice);
+      const Price bidPriceToErase = bidPrice;
+      bids_.erase(bidPriceToErase);
+      data_.erase(bidPriceToErase);
     }
 
     if (asks.empty())
     {
-      asks_.erase(askPrice);
-      data_.erase(askPrice);
+      const Price askPriceToErase = askPrice;
+      asks_.erase(askPriceToErase);
+      data_.erase(askPriceToErase);
     }
   }
   if (!bids_.empty())

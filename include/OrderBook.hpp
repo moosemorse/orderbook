@@ -79,5 +79,6 @@ public:
 
   // debugging/less useful feat
   std::size_t Size() const;
+  bool Contains(OrderId orderId) const;
   OrderBookLevelInfos GetOrderInfos() const;
 };
