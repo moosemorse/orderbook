@@ -76,7 +76,7 @@ Flags (all optional):
 | `--warmup` | 500000 | unrecorded ops replayed first, to settle allocator/tree shape |
 | `--core` | 0 | core to pin to (`sched_setaffinity`) - required, not best-effort |
 | `--seed` | 42 | RNG seed, for reproducible runs |
-| `--target-depth` | 5000 | steady-state resting orders per side the generator aims for |
+| `--target-depth` | 5000 | steady-state resting orders (both sides combined) the generator aims for |
 | `--cancel-ratio` / `--modify-ratio` | 0.2 / 0.1 | op mix once book depth is in-band |
 | `--tick-spread` | 25 | stddev, in ticks, of order price offset from the synthetic mid |
 | `--csv PATH` | (none) | dump raw per-op latencies for offline analysis/plotting |

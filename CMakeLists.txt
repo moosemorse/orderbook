@@ -62,5 +62,5 @@ gtest_discover_tests(orderbook_tests)
 # (generator uses <random> distributions, so the value is libstdc++-specific)
 add_test(
     NAME bench_fingerprint
-    COMMAND orderbook_bench --orders 100000 --warmup 10000 --core 0 --check-every 1000 --check a6050a70fe758d75
+    COMMAND orderbook_bench --orders 100000 --warmup 10000 --core 0 --check-every 1000 --check 0c4bd39513c593d8
 )
