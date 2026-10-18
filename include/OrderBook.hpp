@@ -25,13 +25,11 @@ class OrderBook
   struct LevelData
   {
     Quantity quantity_{};
-    std::uint32_t count_{};
 
     enum class Action
     {
       Add,
       Remove,
-      Match,
     };
   };
 
@@ -55,7 +53,7 @@ class OrderBook
 
   void OnOrderCancelled(const OrderPointer& order);
   void OnOrderAdded(const OrderPointer& order);
-  void OnOrderMatched(Price price, Quantity quantity, bool isFullFilled);
+  void OnOrderMatched(Price price, Quantity quantity);
   void UpdateLevelData(Price price, Quantity quantity, LevelData::Action action);
 
   bool CanFullyFill(Side side, Price price, Quantity quantity) const;

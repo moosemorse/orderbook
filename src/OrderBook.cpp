@@ -118,21 +118,19 @@ void OrderBook::OnOrderAdded(const OrderPointer& order)
   UpdateLevelData(order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
 }
 
-// remove quantity at that price level based on matched order
-// if order matched, we dont change ref count at that price level
-void OrderBook::OnOrderMatched(const Price price, const Quantity quantity, bool isFullFilled)
+// remove matched quantity at that price level
+void OrderBook::OnOrderMatched(const Price price, const Quantity quantity)
 {
-  UpdateLevelData(price, quantity, isFullFilled ? LevelData::Action::Remove : LevelData::Action::Match);
+  UpdateLevelData(price, quantity, LevelData::Action::Remove);
 }
 
-// update price level data table by updating ref count and quantity
-// if no more references at the price level erase entry
+// update price level data table by updating quantity
+// if no more quantity at the price level erase entry
 void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, const LevelData::Action action)
 {
-  auto&[quantity_, count_] = data_[price];
+  auto&[quantity_] = data_[price];
 
-  count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1 : 0;
-  if (action == LevelData::Action::Remove || action == LevelData::Action::Match)
+  if (action == LevelData::Action::Remove)
   {
     quantity_ -= quantity;
   }
@@ -141,7 +139,7 @@ void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, cons
     quantity_ += quantity;
   }
 
-  if (count_ == 0)
+  if (quantity_ == 0)
     data_.erase(price);
 }
 
@@ -372,8 +370,8 @@ Trades OrderBook::MatchOrders()
       trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
                              TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
 
-      OnOrderMatched(bid->GetPrice(), quantity, bid->IsFilled());
-      OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
+      OnOrderMatched(bid->GetPrice(), quantity);
+      OnOrderMatched(ask->GetPrice(), quantity);
     }
     // further clean up for maps
     // bidPrice/askPrice reference the map node's key - copy before erase(), which frees it
