@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <map>
 #include <mutex>
@@ -24,7 +25,7 @@ class OrderBook
   struct LevelData
   {
     Quantity quantity_{};
-    Quantity count_{};
+    std::uint32_t count_{};
 
     enum class Action
     {
