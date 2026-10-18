@@ -5,7 +5,7 @@ Roadmap toward a CV-ready "sustaining X orders/sec at Yus median / Zus p99, meas
 ## Ground rules for every perf step
 - One step = one commit, with before/after `orderbook_bench --orders 5000000 --core 2` numbers recorded below it. The before/after delta is worth more in an interview than the final number alone.
 - `ctest` must stay green, in particular `bench_fingerprint`: a fixed-seed run must reproduce the same fingerprint, which proves the optimisation didn't change matching behaviour. Only update the expected value in `CMakeLists.txt` when a change is *meant* to alter behaviour (or the generated workload), and say so in the commit.
-- Ideas from `~/dev/order-book` (MIT, bozoslav/order-book): re-implement in this codebase, don't copy files - it's C++17, `int` ids, `double`-based `Price`, GTC/IOC/FOK only, and has known bugs (see `TODO2.md`). Credit it in the README as design inspiration.
+- Ideas from `~/dev/order-book` (MIT, bozoslav/order-book): re-implement in this codebase, don't copy files - it's C++17, `int` ids, `double`-based `Price`, GTC/IOC/FOK only, and has known bugs (silently clamps out-of-range prices, accepts duplicate ids). Credit it in the README as design inspiration.
 
 ## Done: benchmark harness (`feat/benchmark-harness`)
 - [x] UAF fix in `MatchOrders` price-level cleanup (`6ae9340`, `6da7b2b`)
@@ -34,6 +34,13 @@ Roadmap toward a CV-ready "sustaining X orders/sec at Yus median / Zus p99, meas
 7. [ ] **Compiler flags** as their own commit: `-O3 -march=native -flto`, default `CMAKE_BUILD_TYPE` to Release. Skip `-ffast-math` (no floating point in the hot path). Separate commit so compiler gains aren't confused with code gains.
 8. [ ] **Drop `ordersMutex_`**: single-writer engine thread fed by a lock-free SPSC/MPSC ingress queue (the legitimate "lock-free" claim - a genuinely lock-free concurrent price-time-priority book isn't tractable). GoodForDay pruning becomes a command through the queue instead of a thread taking the lock. Not in `order-book` - this part is our own.
    - Pin the engine thread and the producer thread to *separate* cores (reuse `bench/Affinity.hpp`'s `PinToCore`) - here pinning is a real latency feature (warm caches, no migration, fewer tail spikes), not just benchmark hygiene. Sharing a core turns every enqueue into a context switch.
+
+## Known bugs - write unit tests that reproduce each, then fix
+- [ ] **`data_` shared between sides.** Keyed by price only, so a bid and an ask at the same price share one entry, and `MatchOrders` erases `data_[price]` unconditionally when *one* side's list empties (`src/OrderBook.cpp`, "further clean up for maps"). Repro: bid 10 @100 rests, ask 4 @100 arrives -> ask level empties -> `data_[100]` erased while the bid's remaining 6 still rests -> `CanFullyFill` no longer sees it. Fix: separate `bidData_`/`askData_` (or key by side+price) and stop erasing `data_` from `MatchOrders`.
+  - Since `LevelData::count_` was removed (level erased on `quantity_ == 0`), this bug is no longer masked: a partial fill on the orphaned order recreates the entry at 0 and `quantity_` wraps to ~4.29e9, i.e. phantom liquidity that `CanFullyFill` will accept FillOrKill orders against. `count_` used to hide it by erasing the recreated entry. `bench_fingerprint` was re-baselined to `248e61fc4f9417f3` for this; expect it to change again when this is fixed.
+- [ ] **`OnOrderCancelled` is never called.** `CancelOrderInternal` (and the FillAndKill cleanup that uses it) removes the order from `orders_` and its level but leaves its quantity in `data_`.
+- [ ] **Spurious wakeup ends the prune thread.** `PruneGoodForDayOrders` treats any `cv_status::no_timeout` as shutdown; use the predicate overload of `wait_for` that re-checks `shutdown_`.
+- [ ] **Lost wakeup on destruction.** `~OrderBook` sets `shutdown_` and notifies without holding `ordersMutex_`; if that lands between the prune thread's `shutdown_` check and its `wait_for`, the notify is missed and `join()` blocks until 16:00. Take the lock around the store.
 
 ## Bench extras (deferred, optional)
 - [ ] Report timer overhead: calibrated empty-timed-region p50, so readers can subtract the ~15-25ns `steady_clock::now()` cost

@@ -1,7 +1,6 @@
 #pragma once
-// Generates a weighted stream of orderbook events. Ops are replayed against a
-// shadow OrderBook as they're generated, so cancels/modifies only ever target
-// orders that are still resting (not ones already filled by a crossing order).
+// Seeded order flow. Each op is replayed on a shadow book as it's generated so
+// cancels/modifies only target orders that are still resting.
 
 #include <algorithm>
 #include <array>
@@ -51,8 +50,7 @@ struct Op
   Quantity quantity;   // unused for Cancel
 };
 
-// make_shared<Order> is deliberately part of this (and so timed by the
-// harness) - it's a real per-call cost today, and the one a memory pool would remove.
+// make_shared<Order> is timed on purpose: it's a real per-call cost a memory pool would remove
 inline Trades Dispatch(OrderBook &book, const Op &op)
 {
   switch (op.type)
@@ -70,26 +68,15 @@ inline Trades Dispatch(OrderBook &book, const Op &op)
   return {};
 }
 
-// how many generated cancels/modifies targeted an order that was actually
-// resting in the shadow book - anything under 100% means the generator's
-// view of the book has drifted and the workload is partly no-ops
-struct GeneratorStats
-{
-  std::size_t cancels{};
-  std::size_t cancelHits{};
-  std::size_t modifies{};
-  std::size_t modifyHits{};
-};
-
 struct GeneratorConfig
 {
   std::uint64_t seed = 42;
   std::size_t targetDepth = 5000; // steady-state resting orders, both sides combined
-  double cancelRatio = 0.2;       // of free-choice ops (i.e. when depth is in-band)
+  double cancelRatio = 0.2;
   double modifyRatio = 0.1;
   Price midPrice = 10'000;
-  Price tickSpread = 25; // stddev, in ticks, of price offset from mid
-  Price midDrift = 1;    // max +-1 tick random walk per generated op
+  Price tickSpread = 25; // stddev of price offset from mid
+  Price midDrift = 1;    // max mid move per op
 };
 
 class OrderGenerator
@@ -101,7 +88,6 @@ public:
   {
   }
 
-  // Appends `count` ops to `out`, evolving internal generator state.
   void Generate(std::size_t count, std::vector<Op> &out)
   {
     out.reserve(out.size() + count);
@@ -139,13 +125,9 @@ public:
         break;
       case OpType::Cancel:
         op = MakeCancel();
-        ++stats_.cancels;
-        stats_.cancelHits += shadow_.Contains(op.orderId);
         break;
       case OpType::Modify:
         op = MakeModify();
-        ++stats_.modifies;
-        stats_.modifyHits += shadow_.Contains(op.orderId);
         break;
       }
 
@@ -153,8 +135,6 @@ public:
       out.push_back(op);
     }
   }
-
-  const GeneratorStats &Stats() const { return stats_; }
 
 private:
   struct RestingOrder
@@ -186,8 +166,7 @@ private:
     return std::discrete_distribution<std::size_t>(weights.begin(), weights.end());
   }
 
-  // Keeps restingPool_ in sync with what's really resting: drops orders a
-  // trade filled, and adds the new order only if the book kept it.
+  // drop orders a trade filled, add the new order only if it rested
   void ApplyToShadow(const Op &op)
   {
     for (const Trade &trade : Dispatch(shadow_, op))
@@ -207,7 +186,7 @@ private:
     restingPool_.push_back(RestingOrder{id, side});
   }
 
-  // O(1) swap-with-back removal; no-op if id isn't pooled
+  // swap-with-back removal
   void RemoveFromPool(OrderId id)
   {
     const auto it = poolIndex_.find(id);
@@ -229,7 +208,7 @@ private:
   Quantity SampleQuantity() { return static_cast<Quantity>(quantityDist_(rng_)); }
 
   void DriftMid()
-  { 
+  {
     std::uniform_int_distribution<Price> step(-config_.midDrift, config_.midDrift);
     const Price next = static_cast<Price>(mid_ + step(rng_));
     const Price lowerClamp = config_.midPrice / 2;
@@ -237,8 +216,7 @@ private:
     mid_ = std::clamp(next, lowerClamp, upperClamp);
   }
 
-  // passive: priced away from the touch (rests). Otherwise priced to cross
-  // (aggressive - matches how FillAndKill/FillOrKill/Market are meant to be used).
+  // passive orders rest away from mid, aggressive ones cross it
   Price PricedFor(Side side, bool passive)
   {
     std::normal_distribution<double> offsetDist(0.0, static_cast<double>(config_.tickSpread));
@@ -271,7 +249,6 @@ private:
 
   Op MakeModify()
   {
-    // real modifies reprice/resize an order, they don't flip its side
     std::uniform_int_distribution<std::size_t> pick(0, restingPool_.size() - 1);
     const auto [id, side] = restingPool_[pick(rng_)];
     DriftMid();
@@ -290,5 +267,4 @@ private:
   std::vector<RestingOrder> restingPool_;
   std::unordered_map<OrderId, std::size_t> poolIndex_; // id -> index in restingPool_
   OrderBook shadow_;
-  GeneratorStats stats_;
 };

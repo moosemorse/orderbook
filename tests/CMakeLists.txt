@@ -13,7 +13,7 @@ add_executable(
     orderbook_tests.cpp
 )
 
-# pch.h lives in the repo root
+# pch.hpp lives in the repo root
 target_include_directories(orderbook_tests PRIVATE ${PROJECT_SOURCE_DIR})
 
 target_link_libraries(

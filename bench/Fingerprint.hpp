@@ -1,8 +1,6 @@
 #pragma once
 
-// Deterministic summary of a run: the same script (seed + generator flags)
-// must always produce the same fingerprint. A refactor that changes it has
-// changed matching behaviour, which is how the bench doubles as a regression test.
+// Hash of a run's trades and final book
 
 #include <cstdint>
 #include <initializer_list>
@@ -19,7 +17,7 @@ public:
       tradedQuantity_ += trade.GetBidTrade().quantity_;
   }
 
-  // Folds the final book state into the hash; call once, after the run.
+  // call once, after the run
   void Finish(const OrderBook &book)
   {
     restingOrders_ = book.Size();

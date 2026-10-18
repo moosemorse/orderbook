@@ -1,7 +1,3 @@
-//
-// pch.h <- pre compiled header
-//
-
 #pragma once
 
 #include <gtest/gtest.h>

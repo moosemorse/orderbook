@@ -15,7 +15,7 @@
 
 class OrderBook
 {
-  // ++ storing iterator in each entry leads to O(1) deletion
+  // iterator into the level's list gives O(1) cancel
   struct OrderEntry
   {
     OrderPointer order_{nullptr};
@@ -33,14 +33,11 @@ class OrderBook
     };
   };
 
-  // map to represent bids and asks
-  // bids sorted in descending order from best bid
-  // asks sorted in ascending order from best ask
-  // e.g. the level with the lowest price is our best ask <- prefer to match
+  // begin() is the best price on both sides
   std::map<Price, OrderPointers, std::greater<Price>> bids_;
   std::map<Price, OrderPointers, std::less<Price>> asks_;
   std::unordered_map<OrderId, OrderEntry> orders_;
-  std::unordered_map<Price, LevelData> data_; // data at a price level
+  std::unordered_map<Price, LevelData> data_; // quantity per price, for CanFullyFill
   mutable std::mutex ordersMutex_;
   std::thread ordersPruneThread_;
   std::condition_variable shutdownConditionVariable_;
@@ -62,7 +59,6 @@ class OrderBook
   Trades MatchOrders();
 
 public:
-  // object creation semantic stuff (destructors, constructors etc.)
   OrderBook();
   OrderBook(const OrderBook &) = delete;
   void operator=(const OrderBook &) = delete;
@@ -70,12 +66,10 @@ public:
   void operator=(OrderBook &&) = delete;
   ~OrderBook();
 
-  // common order apis on orderbook
   Trades AddOrder(const OrderPointer& order);
   void CancelOrder(OrderId orderId);
   Trades ModifyOrder(const OrderModify &order);
 
-  // debugging/less useful feat
   std::size_t Size() const;
   bool Contains(OrderId orderId) const;
   OrderBookLevelInfos GetOrderInfos() const;
