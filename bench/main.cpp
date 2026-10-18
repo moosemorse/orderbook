@@ -10,8 +10,10 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "OrderBook.hpp"
@@ -36,16 +38,23 @@ struct Args
   std::size_t checkEvery = 0;            // 0 = only check invariants at the end
 };
 
+// type-safe printf: std::format does the formatting, stdio does the output
+template <typename... FormatArgs>
+static void Print(std::FILE *stream, std::format_string<FormatArgs...> format, FormatArgs &&...formatArgs)
+{
+  std::fputs(std::format(format, std::forward<FormatArgs>(formatArgs)...).c_str(), stream);
+}
+
 void PrintUsage()
 {
-  std::fprintf(stderr,
-                "usage: orderbook_bench [--orders N] [--warmup N] [--core C] [--seed S]\n"
-                "                        [--target-depth N] [--cancel-ratio F]\n"
-                "                        [--modify-ratio F] [--tick-spread N] [--csv PATH]\n"
-                "                        [--check HEX] [--check-every N]\n"
-                "defaults: --orders 5000000 --warmup 500000 --core 0 --seed 42\n"
-                "          --target-depth 5000 --cancel-ratio 0.2 --modify-ratio 0.1\n"
-                "          --tick-spread 25\n");
+  Print(stderr,
+        "usage: orderbook_bench [--orders N] [--warmup N] [--core C] [--seed S]\n"
+        "                        [--target-depth N] [--cancel-ratio F]\n"
+        "                        [--modify-ratio F] [--tick-spread N] [--csv PATH]\n"
+        "                        [--check HEX] [--check-every N]\n"
+        "defaults: --orders 5000000 --warmup 500000 --core 0 --seed 42\n"
+        "          --target-depth 5000 --cancel-ratio 0.2 --modify-ratio 0.1\n"
+        "          --tick-spread 25\n");
 }
 
 Args ParseArgs(int argc, char **argv)
@@ -60,7 +69,7 @@ Args ParseArgs(int argc, char **argv)
     {
       if (i + 1 >= argc)
       {
-        std::fprintf(stderr, "error: %s requires a value\n", flag.c_str());
+        Print(stderr, "error: {} requires a value\n", flag);
         PrintUsage();
         std::exit(1);
       }
@@ -96,7 +105,7 @@ Args ParseArgs(int argc, char **argv)
     }
     else
     {
-      std::fprintf(stderr, "error: unknown flag %s\n", flag.c_str());
+      Print(stderr, "error: unknown flag {}\n", flag);
       PrintUsage();
       std::exit(1);
     }
@@ -128,15 +137,15 @@ void CheckInvariantsOrDie(const OrderBook &book, std::size_t opIndex)
 {
   if (const char *failure = CheckInvariants(book))
   {
-    std::fprintf(stderr, "error: invariant violated after op %zu: %s\n", opIndex, failure);
+    Print(stderr, "error: invariant violated after op {}: {}\n", opIndex, failure);
     std::exit(1);
   }
 }
 
 void PrintBucket(const char *label, const LatencyStats &s)
 {
-  std::printf("  %-7s (n=%9zu): p50=%9.0fns  p90=%9.0fns  p99=%9.0fns  p99.9=%9.0fns  max=%9.0fns\n", label, s.count,
-              s.p50, s.p90, s.p99, s.p999, s.max);
+  Print(stdout, "  {:<7} (n={:9}): p50={:9.0f}ns  p90={:9.0f}ns  p99={:9.0f}ns  p99.9={:9.0f}ns  max={:9.0f}ns\n", label,
+        s.count, s.p50, s.p90, s.p99, s.p999, s.max);
 }
 
 
@@ -145,11 +154,11 @@ int main(int argc, char **argv)
   const Args args = ParseArgs(argc, argv);
 
 #ifndef NDEBUG
-  std::fprintf(stderr, "==================================================================\n"
-                        "WARNING: this is a DEBUG build (NDEBUG not defined).\n"
-                        "Latency/throughput numbers from a debug build are meaningless.\n"
-                        "Build with `make release` and re-run before recording any numbers.\n"
-                        "==================================================================\n\n");
+  Print(stderr, "==================================================================\n"
+                 "WARNING: this is a DEBUG build (NDEBUG not defined).\n"
+                 "Latency/throughput numbers from a debug build are meaningless.\n"
+                 "Build with `make release` and re-run before recording any numbers.\n"
+                 "==================================================================\n\n");
 #endif
 
   PinToCore(args.core);
@@ -202,40 +211,36 @@ int main(int argc, char **argv)
 
   const LatencyStats combined = recorder.StatsCombined();
 
-  std::printf("\n=== OrderBook Benchmark ===\n");
-  std::printf("CPU: %s (pinned to core %d)\n", CpuModelName().c_str(), args.core);
-  std::printf("Warmup ops: %zu | Measured ops: %zu | Seed: %llu\n", args.warmup, args.orders,
-              static_cast<unsigned long long>(args.seed));
-  std::printf("Wall time: %.3fs | Throughput: %.0f orders/sec\n", elapsedSec, throughput);
+  Print(stdout, "\n=== OrderBook Benchmark ===\n");
+  Print(stdout, "CPU: {} (pinned to core {})\n", CpuModelName(), args.core);
+  Print(stdout, "Warmup ops: {} | Measured ops: {} | Seed: {}\n", args.warmup, args.orders, args.seed);
+  Print(stdout, "Wall time: {:.3f}s | Throughput: {:.0f} orders/sec\n", elapsedSec, throughput);
 
-  std::printf("\nCombined latency: p50=%.3fus  p90=%.3fus  p99=%.3fus  p99.9=%.3fus  max=%.3fus  mean=%.3fus\n",
-              combined.p50 / 1000.0, combined.p90 / 1000.0, combined.p99 / 1000.0, combined.p999 / 1000.0,
-              combined.max / 1000.0, combined.mean / 1000.0);
+  Print(stdout, "\nCombined latency: p50={:.3f}us  p90={:.3f}us  p99={:.3f}us  p99.9={:.3f}us  max={:.3f}us  mean={:.3f}us\n",
+        combined.p50 / 1000.0, combined.p90 / 1000.0, combined.p99 / 1000.0, combined.p999 / 1000.0,
+        combined.max / 1000.0, combined.mean / 1000.0);
 
-  std::printf("\nBy op type:\n");
+  Print(stdout, "\nBy op type:\n");
   for (const OpType type : kOpTypes)
     PrintBucket(ToString(type), recorder.StatsFor(type));
 
   const GeneratorStats &gen = generator.Stats();
   const auto pctOf = [](std::size_t part, std::size_t whole)
   { return whole == 0 ? 100.0 : 100.0 * static_cast<double>(part) / static_cast<double>(whole); };
-  std::printf("\nTarget hit-rate (op hit a resting order): cancel %.1f%%  modify %.1f%%\n",
-              pctOf(gen.cancelHits, gen.cancels), pctOf(gen.modifyHits, gen.modifies));
+  Print(stdout, "\nTarget hit-rate (op hit a resting order): cancel {:.1f}%  modify {:.1f}%\n",
+        pctOf(gen.cancelHits, gen.cancels), pctOf(gen.modifyHits, gen.modifies));
 
   const char *invariantFailure = CheckInvariants(book);
-  std::printf("Book invariants: %s%s\n", invariantFailure ? "FAIL - " : "PASS",
-              invariantFailure ? invariantFailure : "");
+  Print(stdout, "Book invariants: {}{}\n", invariantFailure ? "FAIL - " : "PASS",
+        invariantFailure ? invariantFailure : "");
 
-  std::printf("Fingerprint: %016llx  (trades=%llu  traded qty=%llu  resting orders=%llu)\n",
-              static_cast<unsigned long long>(fingerprint.Value()),
-              static_cast<unsigned long long>(fingerprint.TradeCount()),
-              static_cast<unsigned long long>(fingerprint.TradedQuantity()),
-              static_cast<unsigned long long>(fingerprint.RestingOrders()));
+  Print(stdout, "Fingerprint: {:016x}  (trades={}  traded qty={}  resting orders={})\n", fingerprint.Value(),
+        fingerprint.TradeCount(), fingerprint.TradedQuantity(), fingerprint.RestingOrders());
 
   if (!args.csvPath.empty())
   {
     recorder.WriteCsv(args.csvPath);
-    std::printf("\nraw per-op latencies written to %s\n", args.csvPath.c_str());
+    Print(stdout, "\nraw per-op latencies written to {}\n", args.csvPath);
   }
 
   if (invariantFailure)
@@ -243,9 +248,8 @@ int main(int argc, char **argv)
 
   if (args.expectedFingerprint != 0 && fingerprint.Value() != args.expectedFingerprint)
   {
-    std::fprintf(stderr, "error: fingerprint %016llx does not match expected %016llx - matching behaviour changed\n",
-                 static_cast<unsigned long long>(fingerprint.Value()),
-                 static_cast<unsigned long long>(args.expectedFingerprint));
+    Print(stderr, "error: fingerprint {:016x} does not match expected {:016x} - matching behaviour changed\n",
+          fingerprint.Value(), args.expectedFingerprint);
     return 1;
   }
 
