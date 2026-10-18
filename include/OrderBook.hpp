@@ -14,7 +14,6 @@
 
 class OrderBook
 {
-private:
   // ++ storing iterator in each entry leads to O(1) deletion
   struct OrderEntry
   {
@@ -50,11 +49,11 @@ private:
 
   void PruneGoodForDayOrders();
 
-  void CancelOrders(OrderIds orderIds);
+  void CancelOrders(const OrderIds& orderIds);
   void CancelOrderInternal(OrderId orderId);
 
-  void OnOrderCancelled(OrderPointer order);
-  void OnOrderAdded(OrderPointer order);
+  void OnOrderCancelled(const OrderPointer& order);
+  void OnOrderAdded(const OrderPointer& order);
   void OnOrderMatched(Price price, Quantity quantity, bool isFullFilled);
   void UpdateLevelData(Price price, Quantity quantity, LevelData::Action action);
 
@@ -73,9 +72,9 @@ public:
   ~OrderBook();
 
   // common order apis on orderbook
-  Trades AddOrder(OrderPointer order);
+  Trades AddOrder(const OrderPointer& order);
   void CancelOrder(OrderId orderId);
-  Trades ModifyOrder(OrderModify order);
+  Trades ModifyOrder(const OrderModify &order);
 
   // debugging/less useful feat
   std::size_t Size() const;

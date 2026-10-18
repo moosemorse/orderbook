@@ -3,6 +3,7 @@
 #include <chrono>
 #include <ctime>
 #include <numeric>
+#include <ranges>
 
 // cancel any orders that are expired i.e. at end of trading day
 void OrderBook::PruneGoodForDayOrders()
@@ -44,9 +45,9 @@ void OrderBook::PruneGoodForDayOrders()
     // collect all order ids that are good for day to cancel them
     {
       std::scoped_lock ordersLock{ordersMutex_};
-      for (const auto& [_, entry] : orders_)
+      for (const auto &[order_, location_]: orders_ | std::views::values)
       {
-        const auto& order = entry.order_;
+        const auto& order = order_;
 
         if (order->GetOrderType() != OrderType::GoodForDay)
           continue;
@@ -61,7 +62,7 @@ void OrderBook::PruneGoodForDayOrders()
 
 // helper to cancel a vector of orders
 // advantage, only acquire lock once for sequence of orderIds
-void OrderBook::CancelOrders(OrderIds orderIds)
+void OrderBook::CancelOrders(const OrderIds& orderIds)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
@@ -73,7 +74,7 @@ void OrderBook::CancelOrders(OrderIds orderIds)
 // 1. removing from global orders table by erasing it
 // 2. find which table has order and erase it there too
 // 3. if price level at that table has no more orders erase entire price level
-void OrderBook::CancelOrderInternal(OrderId orderId)
+void OrderBook::CancelOrderInternal(const OrderId orderId)
 {
   if (!orders_.contains(orderId))
     return;
@@ -102,49 +103,49 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
    > OnOrderCancelled
    > OnOrderAdded
    > OnOrderMatched
-  LOCK MUST BE HELD BEFORE UPADTING DATA TABLE TO PREVENT RACE CONDITIONS!
+  LOCK MUST BE HELD BEFORE UPDATING DATA TABLE TO PREVENT RACE CONDITIONS!
 */
 
 // if order cancelled, quantity from that order removed at price level
-void OrderBook::OnOrderCancelled(OrderPointer order)
+void OrderBook::OnOrderCancelled(const OrderPointer& order)
 {
   UpdateLevelData(order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
 }
 
 // if order added, quantity of new order added at that price level
-void OrderBook::OnOrderAdded(OrderPointer order)
+void OrderBook::OnOrderAdded(const OrderPointer& order)
 {
   UpdateLevelData(order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
 }
 
 // remove quantity at that price level based on matched order
 // if order matched, we dont change ref count at that price level
-void OrderBook::OnOrderMatched(Price price, Quantity quantity, bool isFullyFilled)
+void OrderBook::OnOrderMatched(const Price price, const Quantity quantity, bool isFullFilled)
 {
-  UpdateLevelData(price, quantity, isFullyFilled ? LevelData::Action::Remove : LevelData::Action::Match);
+  UpdateLevelData(price, quantity, isFullFilled ? LevelData::Action::Remove : LevelData::Action::Match);
 }
 
 // update price level data table by updating ref count and quantity
 // if no more references at the price level erase entry
-void OrderBook::UpdateLevelData(Price price, Quantity quantity, LevelData::Action action)
+void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, const LevelData::Action action)
 {
-  auto& data = data_[price];
+  auto&[quantity_, count_] = data_[price];
 
-  data.count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1 : 0;
+  count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1 : 0;
   if (action == LevelData::Action::Remove || action == LevelData::Action::Match)
   {
-    data.quantity_ -= quantity;
+    quantity_ -= quantity;
   }
   else
   {
-    data.quantity_ += quantity;
+    quantity_ += quantity;
   }
 
-  if (data.count_ == 0)
+  if (count_ == 0)
     data_.erase(price);
 }
 
-Trades OrderBook::AddOrder(OrderPointer order)
+Trades OrderBook::AddOrder(const OrderPointer& order)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
@@ -201,7 +202,7 @@ Trades OrderBook::AddOrder(OrderPointer order)
   return MatchOrders();
 }
 
-void OrderBook::CancelOrder(OrderId orderId)
+void OrderBook::CancelOrder(const OrderId orderId)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
@@ -211,7 +212,7 @@ void OrderBook::CancelOrder(OrderId orderId)
 // public api to match order on modified order
 // check that this modified is in order book
 // and then cancel old order and match new modified order
-Trades OrderBook::ModifyOrder(OrderModify order)
+Trades OrderBook::ModifyOrder(const OrderModify &order)
 {
   OrderType orderType;
   {
@@ -234,7 +235,7 @@ std::size_t OrderBook::Size() const
   return orders_.size();
 }
 
-bool OrderBook::Contains(OrderId orderId) const
+bool OrderBook::Contains(const OrderId orderId) const
 {
   std::scoped_lock ordersLock{ordersMutex_};
   return orders_.contains(orderId);
@@ -249,10 +250,10 @@ OrderBookLevelInfos OrderBook::GetOrderInfos() const
 
   // A level info at some price, and we accumulate all quantities at the level
   // make sure to get remaining
-  auto CreateLevelInfos = [](Price price, const OrderPointers& orders)
+  auto CreateLevelInfos = [](const Price price, const OrderPointers& orders)
   {
-    return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,
-                                            [](Quantity runningSum, const OrderPointer& order)
+    return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), static_cast<Quantity>(0),
+                                            [](const Quantity runningSum, const OrderPointer& order)
                                             { return runningSum + order->GetRemainingQuantity(); })};
   };
 
@@ -267,7 +268,7 @@ OrderBookLevelInfos OrderBook::GetOrderInfos() const
   return OrderBookLevelInfos{bidInfos, askInfos};
 }
 
-bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
+bool OrderBook::CanFullyFill(const Side side, const Price price, Quantity quantity) const
 {
   if (!CanMatch(side, price))
     return false;
@@ -307,7 +308,7 @@ bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
 // e.g. a buy order at some price is valid if we can find that the best
 // ask is less than what they want
 // TODO? Refactor to pick map and condition based on side
-bool OrderBook::CanMatch(Side side, Price price) const
+bool OrderBook::CanMatch(const Side side, const Price price) const
 {
   if (side == Side::Buy)
   {
@@ -393,15 +394,13 @@ Trades OrderBook::MatchOrders()
   if (!bids_.empty())
   {
     auto& [_, bids] = *bids_.begin();
-    auto& order = bids.front();
-    if (order->GetOrderType() == OrderType::FillAndKill)
+    if (const auto& order = bids.front(); order->GetOrderType() == OrderType::FillAndKill)
       CancelOrderInternal(order->GetOrderId());
   }
   if (!asks_.empty())
   {
     auto& [_, asks] = *asks_.begin();
-    auto& order = asks.front();
-    if (order->GetOrderType() == OrderType::FillAndKill)
+    if (const auto& order = asks.front(); order->GetOrderType() == OrderType::FillAndKill)
       CancelOrderInternal(order->GetOrderId());
   }
   return trades;

@@ -9,7 +9,7 @@
 class OrderModify
 {
 public:
-  OrderModify(OrderId orderId, Side side, Price price, Quantity quantity)
+  OrderModify(const OrderId orderId, const Side side, const Price price, const Quantity quantity)
       : orderId_{orderId}, price_{price}, side_{side}, quantity_{quantity} {}
 
   OrderId GetOrderId() const { return orderId_; }

@@ -16,13 +16,13 @@ class Order
 public:
   // note about quantity: when we talk about an order we really have 3 quantities
   // initial quantity, remaining quantity, and amount filled
-  Order(OrderType orderType, OrderId orderId, Side side, Price price, Quantity quantity)
+  Order(const OrderType orderType, const OrderId orderId, const Side side, const Price price, const Quantity quantity)
       : orderType_{orderType}, orderId_{orderId}, side_{side}, price_{price}, initialQuantity_{quantity}, remainingQuantity_{quantity}
   {
   }
 
   // support market order types, price is not important -> rename to classic factory style?
-  Order(OrderId orderId, Side side, Quantity quantity)
+  Order(const OrderId orderId, const Side side, const Quantity quantity)
       : Order(OrderType::Market, orderId, side, Constants::InvalidPrice, quantity) {}
 
   // note: const just before func body means that the function is part of a class
@@ -74,7 +74,7 @@ public:
     remainingQuantity_ -= quantity;
   }
 
-  // change ordertype to goodTillCancel and price of order to price passed in
+  // change order type to goodTillCancel and price of order to price passed in
   // PRE: used to only convert market orders
   void ToGoodTillCancel(Price price)
   {
