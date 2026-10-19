@@ -20,23 +20,22 @@ constexpr std::size_t kCheckEvery = 1'000;
 constexpr const char *kSnapshotPath = REGRESSION_SNAPSHOT_PATH;
 constexpr const char *kActualPath = "regression_snapshot.actual.txt";
 
-// returns nullptr if the book is consistent, else what's wrong with it
-const char *CheckInvariants(const OrderBook &book)
+testing::AssertionResult CheckInvariants(const OrderBook &book)
 {
   const auto infos = book.GetOrderInfos();
   const auto &bids = infos.GetBids();
   const auto &asks = infos.GetAsks();
 
   if (!bids.empty() && !asks.empty() && bids.front().price_ >= asks.front().price_)
-    return "book is crossed (best bid >= best ask)";
+    return testing::AssertionFailure() << "book is crossed (best bid >= best ask)";
   if (book.Size() < bids.size() + asks.size())
-    return "more price levels than resting orders";
+    return testing::AssertionFailure() << "more price levels than resting orders";
   for (const auto *levels : {&bids, &asks})
     for (const LevelInfo &level : *levels)
       if (level.quantity_ == 0)
-        return "empty price level left in the book";
+        return testing::AssertionFailure() << "empty price level left in the book at " << level.price_;
 
-  return nullptr;
+  return testing::AssertionSuccess();
 }
 } // namespace
 
@@ -59,12 +58,12 @@ TEST(Regression, SeededReplayMatchesSnapshot)
     }
 
     if ((i + 1) % kCheckEvery == 0)
-      if (const char *failure = CheckInvariants(book))
-        FAIL() << failure << " after op " << i;
+    {
+      ASSERT_TRUE(CheckInvariants(book)) << "after op " << i;
+    }
   }
 
-  if (const char *failure = CheckInvariants(book))
-    FAIL() << failure << " at end of run";
+  ASSERT_TRUE(CheckInvariants(book)) << "at end of run";
 
   std::ostringstream actual;
   actual << "# trades=" << tradeCount << " traded_qty=" << tradedQuantity << '\n';
