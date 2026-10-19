@@ -12,6 +12,8 @@ add_executable(
     orderbook_tests
     orderbook_tests.cpp
     regression_tests.cpp
+    api_tests.cpp
+    known_bug_tests.cpp
 )
 
 # pch.hpp lives in the repo root; the regression test uses the bench's generator
