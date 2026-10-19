@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <condition_variable>
 #include <iosfwd>
 #include <map>
@@ -43,7 +42,7 @@ class OrderBook
   std::unordered_map<Price, LevelData> askData_;
   mutable std::mutex ordersMutex_;
   std::condition_variable shutdownConditionVariable_;
-  std::atomic<bool> shutdown_{false};
+  bool shutdown_{false}; // guarded by ordersMutex_
   // declared last: members initialise in order, and the thread uses all of the above
   std::thread ordersPruneThread_;
 

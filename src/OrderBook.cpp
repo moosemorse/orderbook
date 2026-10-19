@@ -34,7 +34,7 @@ void OrderBook::PruneGoodForDayOrders()
       std::unique_lock ordersLock{ordersMutex_};
       // the predicate re-checks shutdown_, so a spurious wakeup goes back to waiting instead of exiting
       if (shutdownConditionVariable_.wait_for(ordersLock, till,
-                                              [this] { return shutdown_.load(std::memory_order_acquire); }))
+                                              [this] { return shutdown_; }))
         return;
     }
 
@@ -365,7 +365,7 @@ OrderBook::~OrderBook()
   {
     // under the lock so the store can't land between the prune thread's check and its wait
     std::scoped_lock ordersLock{ordersMutex_};
-    shutdown_.store(true, std::memory_order_release);
+    shutdown_ = true;
   }
   shutdownConditionVariable_.notify_one();
   ordersPruneThread_.join();
