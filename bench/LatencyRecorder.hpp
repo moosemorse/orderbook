@@ -1,14 +1,12 @@
 #pragma once
 
-// Per-op-type latency buckets, preallocated so recording never allocates mid-run.
+// buckets are preallocated so recording never allocates mid-run
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <numeric>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,15 +48,6 @@ public:
       all.insert(all.end(), bucket.begin(), bucket.end());
 
     return Compute(std::move(all));
-  }
-
-  void WriteCsv(const std::string &path) const
-  {
-    std::ofstream out(path);
-    out << "op,nanoseconds\n";
-    for (const OpType type : kOpTypes)
-      for (const auto ns : buckets_[BucketIndex(type)])
-        out << ToString(type) << ',' << ns << '\n';
   }
 
 private:

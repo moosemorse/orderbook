@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <map>
 #include <mutex>
@@ -14,8 +15,7 @@
 
 class OrderBook
 {
-private:
-  // ++ storing iterator in each entry leads to O(1) deletion
+  // iterator into the level's list gives O(1) cancel
   struct OrderEntry
   {
     OrderPointer order_{nullptr};
@@ -25,24 +25,19 @@ private:
   struct LevelData
   {
     Quantity quantity_{};
-    Quantity count_{};
 
     enum class Action
     {
       Add,
       Remove,
-      Match,
     };
   };
 
-  // map to represent bids and asks
-  // bids sorted in descending order from best bid
-  // asks sorted in ascending order from best ask
-  // e.g. the level with the lowest price is our best ask <- prefer to match
+  // begin() is the best price on both sides
   std::map<Price, OrderPointers, std::greater<Price>> bids_;
   std::map<Price, OrderPointers, std::less<Price>> asks_;
   std::unordered_map<OrderId, OrderEntry> orders_;
-  std::unordered_map<Price, LevelData> data_; // data at a price level
+  std::unordered_map<Price, LevelData> data_; // quantity per price, for CanFullyFill
   mutable std::mutex ordersMutex_;
   std::thread ordersPruneThread_;
   std::condition_variable shutdownConditionVariable_;
@@ -50,12 +45,12 @@ private:
 
   void PruneGoodForDayOrders();
 
-  void CancelOrders(OrderIds orderIds);
+  void CancelOrders(const OrderIds& orderIds);
   void CancelOrderInternal(OrderId orderId);
 
-  void OnOrderCancelled(OrderPointer order);
-  void OnOrderAdded(OrderPointer order);
-  void OnOrderMatched(Price price, Quantity quantity, bool isFullFilled);
+  void OnOrderCancelled(const OrderPointer& order);
+  void OnOrderAdded(const OrderPointer& order);
+  void OnOrderMatched(Price price, Quantity quantity);
   void UpdateLevelData(Price price, Quantity quantity, LevelData::Action action);
 
   bool CanFullyFill(Side side, Price price, Quantity quantity) const;
@@ -64,7 +59,6 @@ private:
   Trades MatchOrders();
 
 public:
-  // object creation semantic stuff (destructors, constructors etc.)
   OrderBook();
   OrderBook(const OrderBook &) = delete;
   void operator=(const OrderBook &) = delete;
@@ -72,12 +66,10 @@ public:
   void operator=(OrderBook &&) = delete;
   ~OrderBook();
 
-  // common order apis on orderbook
-  Trades AddOrder(OrderPointer order);
+  Trades AddOrder(const OrderPointer& order);
   void CancelOrder(OrderId orderId);
-  Trades ModifyOrder(OrderModify order);
+  Trades ModifyOrder(const OrderModify &order);
 
-  // debugging/less useful feat
   std::size_t Size() const;
   bool Contains(OrderId orderId) const;
   OrderBookLevelInfos GetOrderInfos() const;

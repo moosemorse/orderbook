@@ -3,6 +3,7 @@
 #include <chrono>
 #include <ctime>
 #include <numeric>
+#include <ranges>
 
 // cancel any orders that are expired i.e. at end of trading day
 void OrderBook::PruneGoodForDayOrders()
@@ -12,22 +13,19 @@ void OrderBook::PruneGoodForDayOrders()
 
   while (true)
   {
-    // get struct for calendar data and time
     const auto now = system_clock::now();
     const auto now_c = system_clock::to_time_t(now);
     std::tm now_parts;
     localtime_r(&now_c, &now_parts);
 
-    // increment day counter if past assigned end time
+    // already past the cutoff, so the next one is tomorrow
     if (now_parts.tm_hour >= end.count())
       now_parts.tm_mday += 1;
 
-    // simulate end of day in struct now_parts
     now_parts.tm_hour = static_cast<int>(end.count());
     now_parts.tm_min = 0;
     now_parts.tm_sec = 0;
 
-    // find time remaining till end of day using now_parts
     auto next = system_clock::from_time_t(mktime(&now_parts));
     auto till = next - now + milliseconds(100);
 
@@ -41,27 +39,19 @@ void OrderBook::PruneGoodForDayOrders()
 
     OrderIds orderIds;
 
-    // collect all order ids that are good for day to cancel them
     {
       std::scoped_lock ordersLock{ordersMutex_};
-      for (const auto& [_, entry] : orders_)
-      {
-        const auto& order = entry.order_;
-
-        if (order->GetOrderType() != OrderType::GoodForDay)
-          continue;
-
-        orderIds.push_back(order->GetOrderId());
-      }
+      for (const auto& [order, _] : orders_ | std::views::values)
+        if (order->GetOrderType() == OrderType::GoodForDay)
+          orderIds.push_back(order->GetOrderId());
     }
 
     CancelOrders(orderIds);
   }
 }
 
-// helper to cancel a vector of orders
-// advantage, only acquire lock once for sequence of orderIds
-void OrderBook::CancelOrders(OrderIds orderIds)
+// takes the lock once for the whole batch
+void OrderBook::CancelOrders(const OrderIds& orderIds)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
@@ -69,11 +59,8 @@ void OrderBook::CancelOrders(OrderIds orderIds)
     CancelOrderInternal(orderId);
 }
 
-// cancel order by
-// 1. removing from global orders table by erasing it
-// 2. find which table has order and erase it there too
-// 3. if price level at that table has no more orders erase entire price level
-void OrderBook::CancelOrderInternal(OrderId orderId)
+// O(1): the stored iterator erases straight from the level's list
+void OrderBook::CancelOrderInternal(const OrderId orderId)
 {
   if (!orders_.contains(orderId))
     return;
@@ -81,8 +68,7 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
   const auto [order, it] = orders_.at(orderId);
   orders_.erase(orderId);
 
-  // I hate this, asks and bids have different signatures due to comparators
-  // so we can abstract this into lambda and cant use ternary
+  // bids_ and asks_ are different types (different comparators), hence the generic lambda
 
   auto eraseOrderFromPriceLevel = [&](auto& orders, Price price)
   {
@@ -98,62 +84,47 @@ void OrderBook::CancelOrderInternal(OrderId orderId)
     eraseOrderFromPriceLevel(bids_, order->GetPrice());
 }
 
-/* Book-keeping: updating level data.
-   > OnOrderCancelled
-   > OnOrderAdded
-   > OnOrderMatched
-  LOCK MUST BE HELD BEFORE UPADTING DATA TABLE TO PREVENT RACE CONDITIONS!
-*/
-
-// if order cancelled, quantity from that order removed at price level
-void OrderBook::OnOrderCancelled(OrderPointer order)
+// level data bookkeeping - caller must hold ordersMutex_
+void OrderBook::OnOrderCancelled(const OrderPointer& order)
 {
   UpdateLevelData(order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
 }
 
-// if order added, quantity of new order added at that price level
-void OrderBook::OnOrderAdded(OrderPointer order)
+void OrderBook::OnOrderAdded(const OrderPointer& order)
 {
   UpdateLevelData(order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
 }
 
-// remove quantity at that price level based on matched order
-// if order matched, we dont change ref count at that price level
-void OrderBook::OnOrderMatched(Price price, Quantity quantity, bool isFullyFilled)
+void OrderBook::OnOrderMatched(const Price price, const Quantity quantity)
 {
-  UpdateLevelData(price, quantity, isFullyFilled ? LevelData::Action::Remove : LevelData::Action::Match);
+  UpdateLevelData(price, quantity, LevelData::Action::Remove);
 }
 
-// update price level data table by updating ref count and quantity
-// if no more references at the price level erase entry
-void OrderBook::UpdateLevelData(Price price, Quantity quantity, LevelData::Action action)
+void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, const LevelData::Action action)
 {
-  auto& data = data_[price];
+  auto&[quantity_] = data_[price];
 
-  data.count_ += action == LevelData::Action::Remove ? -1 : action == LevelData::Action::Add ? 1 : 0;
-  if (action == LevelData::Action::Remove || action == LevelData::Action::Match)
+  if (action == LevelData::Action::Remove)
   {
-    data.quantity_ -= quantity;
+    quantity_ -= quantity;
   }
   else
   {
-    data.quantity_ += quantity;
+    quantity_ += quantity;
   }
 
-  if (data.count_ == 0)
+  if (quantity_ == 0)
     data_.erase(price);
 }
 
-Trades OrderBook::AddOrder(OrderPointer order)
+Trades OrderBook::AddOrder(const OrderPointer& order)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
-  // c++20: contains
   if (orders_.contains(order->GetOrderId()))
     return {};
 
-  // market order semantics, its a goodTillCancel order
-  // fake it as a limit order at worst possible price and sweep entire book
+  // market order: reprice to the worst opposite level so it sweeps the book
   if (order->GetOrderType() == OrderType::Market)
   {
     if (order->GetSide() == Side::Buy && !asks_.empty())
@@ -178,7 +149,6 @@ Trades OrderBook::AddOrder(OrderPointer order)
 
   OrderPointers::iterator iterator;
 
-  // add order to respective map and se lect iterator for map (bids/asks)
   if (order->GetSide() == Side::Buy)
   {
     auto& orders = bids_[order->GetPrice()];
@@ -192,26 +162,28 @@ Trades OrderBook::AddOrder(OrderPointer order)
     iterator = std::prev(orders.end());
   }
 
-  // update global order map with new order
   orders_.insert({order->GetOrderId(), OrderEntry{order, iterator}});
 
   OnOrderAdded(order);
 
-  // finally, try match orders as result of adding new order
-  return MatchOrders();
+  Trades trades = MatchOrders();
+
+  // FillAndKill never rests: cancel whatever didn't fill
+  if (order->GetOrderType() == OrderType::FillAndKill && !order->IsFilled())
+    CancelOrderInternal(order->GetOrderId());
+
+  return trades;
 }
 
-void OrderBook::CancelOrder(OrderId orderId)
+void OrderBook::CancelOrder(const OrderId orderId)
 {
   std::scoped_lock ordersLock{ordersMutex_};
 
   CancelOrderInternal(orderId);
 }
 
-// public api to match order on modified order
-// check that this modified is in order book
-// and then cancel old order and match new modified order
-Trades OrderBook::ModifyOrder(OrderModify order)
+// modify = cancel + re-add, so the order loses its time priority
+Trades OrderBook::ModifyOrder(const OrderModify &order)
 {
   OrderType orderType;
   {
@@ -234,61 +206,41 @@ std::size_t OrderBook::Size() const
   return orders_.size();
 }
 
-bool OrderBook::Contains(OrderId orderId) const
+bool OrderBook::Contains(const OrderId orderId) const
 {
   std::scoped_lock ordersLock{ordersMutex_};
   return orders_.contains(orderId);
 }
 
-// maybe useful for debugging/info later
 OrderBookLevelInfos OrderBook::GetOrderInfos() const
 {
-  LevelInfos bidInfos, askInfos;
-  bidInfos.reserve(orders_.size());
-  askInfos.reserve(orders_.size());
-
-  // A level info at some price, and we accumulate all quantities at the level
-  // make sure to get remaining
-  auto CreateLevelInfos = [](Price price, const OrderPointers& orders)
+  // returns a vector of price level : quantities
+  // e.g. [{100, 15}, {99, 7}] so at price 100, there's 15 units
+  const auto toLevelInfos = [](const auto& levels)
   {
-    return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,
-                                            [](Quantity runningSum, const OrderPointer& order)
-                                            { return runningSum + order->GetRemainingQuantity(); })};
+    LevelInfos infos;
+    infos.reserve(levels.size());
+    for (const auto& [price, orders] : levels)
+      infos.push_back(LevelInfo{price, std::accumulate(orders.begin(), orders.end(), Quantity{0},
+                                                       [](const Quantity sum, const OrderPointer& order)
+                                                       { return sum + order->GetRemainingQuantity(); })});
+    return infos;
   };
 
-  // accumulate level infos for each bids and asks
-  //
-  for (const auto& [price, orders] : bids_)
-    bidInfos.push_back(CreateLevelInfos(price, orders));
-
-  for (const auto& [price, orders] : asks_)
-    askInfos.push_back(CreateLevelInfos(price, orders));
-
-  return OrderBookLevelInfos{bidInfos, askInfos};
+  return OrderBookLevelInfos{toLevelInfos(bids_), toLevelInfos(asks_)};
 }
 
-bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
+bool OrderBook::CanFullyFill(const Side side, const Price price, Quantity quantity) const
 {
   if (!CanMatch(side, price))
     return false;
 
-  std::optional<Price> threshold;
-
-  if (side == Side::Buy)
-  {
-    const auto [askPrice, _] = *asks_.begin();
-    threshold = askPrice;
-  }
-  else
-  {
-    const auto [bidPrice, _] = *bids_.begin();
-    threshold = bidPrice;
-  }
+  // CanMatch passed, so the opposite side isn't empty
+  const Price threshold = side == Side::Buy ? asks_.begin()->first : bids_.begin()->first;
 
   for (const auto& [levelPrice, levelData] : data_)
   {
-    if (threshold.has_value() && ((side == Side::Buy && threshold.value() > levelPrice) ||
-                                  (side == Side::Sell && threshold.value() < levelPrice)))
+    if ((side == Side::Buy && threshold > levelPrice) || (side == Side::Sell && threshold < levelPrice))
       continue;
 
     if ((side == Side::Buy && levelPrice > price) || (side == Side::Sell && levelPrice < price))
@@ -303,11 +255,8 @@ bool OrderBook::CanFullyFill(Side side, Price price, Quantity quantity) const
   return false;
 }
 
-// try to match a side with given price to other side
-// e.g. a buy order at some price is valid if we can find that the best
-// ask is less than what they want
-// TODO? Refactor to pick map and condition based on side
-bool OrderBook::CanMatch(Side side, Price price) const
+// would an order at this price cross the best opposite level?
+bool OrderBook::CanMatch(const Side side, const Price price) const
 {
   if (side == Side::Buy)
   {
@@ -330,80 +279,59 @@ bool OrderBook::CanMatch(Side side, Price price) const
 Trades OrderBook::MatchOrders()
 {
   Trades trades;
-  trades.reserve(orders_.size()); // optimistic, orders_.size predicts we have that many trades
-  while (true)
+  trades.reserve(orders_.size()); // over-reserves, see TODO.md perf step 3
+
+  // assumption: order is at front of price level
+  const auto popIfFilled = [this](OrderPointers& level, const OrderPointer& order)
   {
-    if (bids_.empty() || asks_.empty())
-      break;
-    // iterator from ordered maps
+    if (!order->IsFilled())
+      return;
+    level.pop_front();
+    orders_.erase(order->GetOrderId());
+  };
+
+  // price is taken by value: the caller's is a reference to the map node's key, which erase() frees
+  // also update any other data structures here that store info about price level e.g. data_
+  const auto eraseLevelIfEmpty = [this](auto& levels, const OrderPointers& level, const Price price)
+  {
+    if (!level.empty())
+      return;
+    levels.erase(price);
+    data_.erase(price);
+  };
+
+  while (!bids_.empty() && !asks_.empty())
+  {
     auto& [bidPrice, bids] = *bids_.begin();
     auto& [askPrice, asks] = *asks_.begin();
-    // preemptive break
     if (bidPrice < askPrice)
       break;
-    // try match orders
-    while (bids.size() && asks.size())
-    {
-      // make sure to take copy of shared_ptr (increments reference count)
-      // so even after pop_front destroys lists copy, our copies are saved
-      auto bid = bids.front();
-      auto ask = asks.front();
 
-      Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
+    while (!bids.empty() && !asks.empty())
+    {
+      // copies keep the orders alive after pop_front
+      const auto bid = bids.front();
+      const auto ask = asks.front();
+
+      const Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
 
       bid->Fill(quantity);
       ask->Fill(quantity);
 
-      // cleanup - TODO, duplicate code, abstract into erase order
-      if (bid->IsFilled())
-      {
-        bids.pop_front();
-        orders_.erase(bid->GetOrderId());
-      }
-
-      // cleanup
-      if (ask->IsFilled())
-      {
-        asks.pop_front();
-        orders_.erase(ask->GetOrderId());
-      }
+      popIfFilled(bids, bid);
+      popIfFilled(asks, ask);
 
       trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
                              TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
 
-      OnOrderMatched(bid->GetPrice(), quantity, bid->IsFilled());
-      OnOrderMatched(ask->GetPrice(), quantity, ask->IsFilled());
-    }
-    // further clean up for maps
-    // bidPrice/askPrice reference the map node's key - copy before erase(), which frees it
-    if (bids.empty())
-    {
-      const Price bidPriceToErase = bidPrice;
-      bids_.erase(bidPriceToErase);
-      data_.erase(bidPriceToErase);
+      OnOrderMatched(bid->GetPrice(), quantity);
+      OnOrderMatched(ask->GetPrice(), quantity);
     }
 
-    if (asks.empty())
-    {
-      const Price askPriceToErase = askPrice;
-      asks_.erase(askPriceToErase);
-      data_.erase(askPriceToErase);
-    }
+    eraseLevelIfEmpty(bids_, bids, bidPrice);
+    eraseLevelIfEmpty(asks_, asks, askPrice);
   }
-  if (!bids_.empty())
-  {
-    auto& [_, bids] = *bids_.begin();
-    auto& order = bids.front();
-    if (order->GetOrderType() == OrderType::FillAndKill)
-      CancelOrderInternal(order->GetOrderId());
-  }
-  if (!asks_.empty())
-  {
-    auto& [_, asks] = *asks_.begin();
-    auto& order = asks.front();
-    if (order->GetOrderType() == OrderType::FillAndKill)
-      CancelOrderInternal(order->GetOrderId());
-  }
+
   return trades;
 }
 

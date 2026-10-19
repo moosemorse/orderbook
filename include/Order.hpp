@@ -10,23 +10,18 @@
 #include "OrderType.hpp"
 #include "Side.hpp"
 
-/* Now we need to describe the things we add to an order book which are order objects. */
 class Order
 {
 public:
-  // note about quantity: when we talk about an order we really have 3 quantities
-  // initial quantity, remaining quantity, and amount filled
-  Order(OrderType orderType, OrderId orderId, Side side, Price price, Quantity quantity)
+  Order(const OrderType orderType, const OrderId orderId, const Side side, const Price price, const Quantity quantity)
       : orderType_{orderType}, orderId_{orderId}, side_{side}, price_{price}, initialQuantity_{quantity}, remainingQuantity_{quantity}
   {
   }
 
-  // support market order types, price is not important -> rename to classic factory style?
-  Order(OrderId orderId, Side side, Quantity quantity)
+  // market order: price is set later by ToGoodTillCancel
+  Order(const OrderId orderId, const Side side, const Quantity quantity)
       : Order(OrderType::Market, orderId, side, Constants::InvalidPrice, quantity) {}
 
-  // note: const just before func body means that the function is part of a class
-  // and cant change any members of that class AND only const objects can call these functions
   OrderId GetOrderId() const
   {
     return orderId_;
@@ -47,8 +42,6 @@ public:
     return orderType_;
   }
 
-  // might not be important but mentioned in some documentation
-  // to be honest, we care more about remaining quantity
   Quantity GetInitialQuantity() const
   {
     return initialQuantity_;
@@ -68,14 +61,13 @@ public:
 
   void Fill(Quantity quantity)
   {
-    if (quantity > GetRemainingQuantity()) // note, std::format works by {} being replaced by *args
+    if (quantity > GetRemainingQuantity())
       throw std::logic_error(std::format("Order ({}) cannot be filled for more than its remaining quantity.", GetOrderId()));
 
     remainingQuantity_ -= quantity;
   }
 
-  // change ordertype to goodTillCancel and price of order to price passed in
-  // PRE: used to only convert market orders
+  // market orders only
   void ToGoodTillCancel(Price price)
   {
     if (GetOrderType() != OrderType::Market)
@@ -94,10 +86,8 @@ private:
   Quantity remainingQuantity_;
 };
 
-// because we are storing one Order in multiple data structures in our order book
-// we're going to want to use reference semantics (orders dict and ask/bids dict)
+// shared: an order lives in both orders_ and its price level
 using OrderPointer = std::shared_ptr<Order>;
 
-// list for order data structure, because a list gives an iterator which cannot
-// be invalidated no matter how large it grows (alternative is vector, TODO?)
+// list iterators survive inserts/erases elsewhere, so OrderEntry can store one
 using OrderPointers = std::list<OrderPointer>;

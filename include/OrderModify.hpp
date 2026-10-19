@@ -2,14 +2,10 @@
 
 #include "Order.hpp"
 
-// common apis: add, modify, cancel
-// add and cancel are simple, modify requires the ability to modify different
-// attributes like remaining price or side (side isn't necessary)
-
 class OrderModify
 {
 public:
-  OrderModify(OrderId orderId, Side side, Price price, Quantity quantity)
+  OrderModify(const OrderId orderId, const Side side, const Price price, const Quantity quantity)
       : orderId_{orderId}, price_{price}, side_{side}, quantity_{quantity} {}
 
   OrderId GetOrderId() const { return orderId_; }
@@ -17,7 +13,6 @@ public:
   Side GetSide() const { return side_; }
   Quantity GetQuantity() const { return quantity_; }
 
-  // current: only can modify good till cancel, but can be extended
   OrderPointer ToOrderPointer(OrderType type) const
   {
     return std::make_shared<Order>(type, GetOrderId(), GetSide(), GetPrice(), GetQuantity());
