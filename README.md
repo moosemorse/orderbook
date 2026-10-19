@@ -75,10 +75,8 @@ Flags (all optional):
 | `--orders` | 5000000 | measured ops |
 | `--warmup` | 500000 | unrecorded ops replayed first, to settle allocator/tree shape |
 | `--core` | 0 | core to pin to (`sched_setaffinity`) - required, not best-effort |
-| `--check HEX` | (none) | exit 1 unless the run's fingerprint matches `HEX` |
-| `--check-every N` | (off) | check book invariants every N ops and exit 1 on the first violation (slows the run - don't use for timing) |
 
-**As a regression test:** every run prints a fingerprint (hash of trade count, traded quantity and final book state). The generator is seeded, so the same flags always give the same fingerprint, so a refactor that shouldn't change behaviour (memory pool, lock removal, ...) must leave it unchanged. `ctest` runs a small fixed-seed run with `--check` and `--check-every` as the `bench_fingerprint` test; if a change is *meant* to alter matching, re-run that command and update the expected value in `tests/CMakeLists.txt`.
+**Regression test:** `tests/regression_tests.cpp` replays a fixed-seed script from the same generator (untimed), checks book invariants every 1000 ops, and compares a fingerprint (hash of trade count, traded quantity and final book state) against a stored value. A refactor that shouldn't change behaviour (memory pool, lock removal, ...) must leave it unchanged; if a change is *meant* to alter matching, update `kExpectedFingerprint` and say so in the commit.
 
 Only trust numbers from a release build (`make release` / `make bench`).
 
