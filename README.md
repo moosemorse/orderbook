@@ -50,8 +50,8 @@ To run the GTest binary directly, run it from `build/`, because the test files a
 cd build && ./orderbook_tests --gtest_filter='Regression*'
 ```
 
-- **End-to-end tests** (`tests/orderbook_tests.cpp`): each file in `tests/TestFolder/` (e.g. `Match_GoodTillCancel.txt`) is a script of order actions plus the expected result, parsed and replayed against a fresh book.
-- **Regression (golden master) test** (`tests/regression_tests.cpp`): replays a fixed-seed script of 110k ops from the benchmark's generator, checks book invariants every 1000 ops, and compares a hash of the trades and the final book (`bench/Fingerprint.hpp`) against `kExpectedFingerprint`. A refactor must leave the hash unchanged. If a change is meant to alter matching, update the value and say so in the commit.
+- **End-to-end tests** (`tests/orderbook_tests.cpp`): each `Match_*.txt` file in `tests/TestFolder/` (e.g. `Match_GoodTillCancel.txt`) is a script of order actions plus the expected result, parsed and replayed against a fresh book.
+- **Regression (golden master) test** (`tests/regression_tests.cpp`): replays a fixed-seed script of 110k ops from the benchmark's generator, checks book invariants every 1000 ops, and compares the trade count, traded quantity and a per-order dump of the final book (`OrderBook::Print`) against `tests/TestFolder/regression_snapshot.txt`. A refactor must leave the snapshot unchanged; on a mismatch the test writes `build/regression_snapshot.actual.txt` to diff against. If a change is meant to alter matching, rerun with `UPDATE_SNAPSHOT=1` and say so in the commit.
 
 CI builds and runs `ctest` on every push and pull request to `main`.
 

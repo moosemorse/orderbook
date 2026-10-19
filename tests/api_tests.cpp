@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
+#include <future>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -89,6 +93,28 @@ TEST(GetOrderInfos, ReportsRemainingNotInitialQuantity)
   book.AddOrder(Gtc(2, Side::Sell, 100, 4));
 
   EXPECT_EQ(Bids(book), (Levels{{100, 6}}));
+}
+
+// most reliable under -fsanitize=thread
+TEST(GetOrderInfos, SafeWithConcurrentWriters)
+{
+  OrderBook book;
+  std::atomic<bool> stop{false};
+
+  std::thread writer{[&]
+                     {
+                       for (OrderId id = 1; !stop.load(std::memory_order_relaxed); ++id)
+                       {
+                         book.AddOrder(Gtc(id, Side::Buy, static_cast<Price>(100 + id % 50), 1));
+                         book.CancelOrder(id);
+                       }
+                     }};
+
+  for (int i = 0; i < 200'000; ++i)
+    book.GetOrderInfos();
+
+  stop = true;
+  writer.join();
 }
 
 // ---- AddOrder: GoodTillCancel ----
@@ -286,6 +312,46 @@ TEST(FillOrKill, RejectedOnEmptyBook)
   EXPECT_EQ(book.Size(), 0u);
 }
 
+// a bid and an ask at the same price must not share level quantity
+TEST(FillOrKill, SeesBidLeftAfterAskAtSamePriceFills)
+{
+  OrderBook book;
+  book.AddOrder(Gtc(1, Side::Buy, 100, 10));
+  book.AddOrder(Gtc(2, Side::Sell, 100, 4));
+  ASSERT_EQ(Bids(book), (Levels{{100, 6}}));
+
+  const auto trades = book.AddOrder(MakeOrder(OrderType::FillOrKill, 3, Side::Sell, 100, 6));
+
+  ASSERT_EQ(trades.size(), 1u);
+  ExpectTrade(trades[0], 1, 3, 6);
+  EXPECT_EQ(book.Size(), 0u);
+}
+
+TEST(FillOrKill, RejectedAfterRepeatedPartialFillsOfALevel)
+{
+  OrderBook book;
+  book.AddOrder(Gtc(1, Side::Sell, 100, 4));
+  book.AddOrder(Gtc(2, Side::Buy, 100, 10));
+  book.AddOrder(Gtc(3, Side::Sell, 99, 2));
+  ASSERT_EQ(Bids(book), (Levels{{100, 4}}));
+
+  EXPECT_TRUE(book.AddOrder(MakeOrder(OrderType::FillOrKill, 4, Side::Sell, 100, 100)).empty());
+  EXPECT_FALSE(book.Contains(4));
+  EXPECT_TRUE(Asks(book).empty());
+}
+
+TEST(FillOrKill, IgnoresCancelledQuantity)
+{
+  OrderBook book;
+  book.AddOrder(Gtc(1, Side::Buy, 100, 5));
+  book.AddOrder(Gtc(2, Side::Buy, 100, 5));
+  book.CancelOrder(2);
+
+  EXPECT_TRUE(book.AddOrder(MakeOrder(OrderType::FillOrKill, 3, Side::Sell, 100, 10)).empty());
+  EXPECT_FALSE(book.Contains(3));
+  EXPECT_TRUE(book.Contains(1));
+}
+
 // ---- AddOrder: GoodForDay ----
 
 TEST(GoodForDay, RestsAndMatchesLikeGoodTillCancel)
@@ -338,6 +404,25 @@ TEST(Market, SellSweepsBidsRegardlessOfPrice)
   ExpectTrade(trades[0], 1, 3, 5);
   ExpectTrade(trades[1], 2, 3, 3);
   EXPECT_EQ(Bids(book), (Levels{{90, 2}}));
+}
+
+TEST(Market, UnfilledRemainderIsCancelled)
+{
+  OrderBook book;
+  book.AddOrder(Gtc(1, Side::Sell, 100, 5));
+
+  const auto trades = book.AddOrder(std::make_shared<Order>(2, Side::Buy, 10));
+
+  ASSERT_EQ(trades.size(), 1u);
+  EXPECT_FALSE(book.Contains(2));
+  EXPECT_EQ(book.Size(), 0u);
+  EXPECT_TRUE(Bids(book).empty());
+}
+
+// 0 is a usable price for an integer tick, so it can't double as "no price"
+TEST(Market, InvalidPriceIsNotZero)
+{
+  EXPECT_NE(Constants::InvalidPrice, Price{0});
 }
 
 // ---- CancelOrder ----
@@ -425,4 +510,28 @@ TEST(ModifyOrder, CanCrossAndMatch)
   ASSERT_EQ(trades.size(), 1u);
   ExpectTrade(trades[0], 2, 1, 5);
   EXPECT_EQ(book.Size(), 0u);
+}
+
+// ---- Lifetime ----
+
+// destroying a book must wake and join the prune thread straight away, not at the 16:00 cutoff
+TEST(Lifetime, DestructorReturnsPromptly)
+{
+  auto done = std::make_shared<std::promise<void>>();
+  auto finished = done->get_future();
+
+  // detached so a hung join() fails this test instead of hanging the run
+  std::thread{[done]
+              {
+                for (int i = 0; i < 20'000; ++i)
+                {
+                  OrderBook book;
+                  std::this_thread::sleep_for(std::chrono::microseconds{i % 50});
+                }
+                done->set_value();
+              }}
+      .detach();
+
+  ASSERT_EQ(finished.wait_for(std::chrono::seconds{60}), std::future_status::ready)
+      << "an OrderBook destructor never returned";
 }

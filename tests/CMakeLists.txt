@@ -13,11 +13,14 @@ add_executable(
     orderbook_tests.cpp
     regression_tests.cpp
     api_tests.cpp
-    known_bug_tests.cpp
 )
 
 # pch.hpp lives in the repo root; the regression test uses the bench's generator
 target_include_directories(orderbook_tests PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/bench)
+
+# source-tree path, so UPDATE_SNAPSHOT=1 rewrites the committed file rather than the build copy
+target_compile_definitions(orderbook_tests PRIVATE
+    REGRESSION_SNAPSHOT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/TestFolder/regression_snapshot.txt")
 
 target_link_libraries(
     orderbook_tests

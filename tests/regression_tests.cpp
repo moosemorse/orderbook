@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <fstream>
 #include <initializer_list>
+#include <sstream>
+#include <string>
 #include <vector>
 
-#include "Fingerprint.hpp"
 #include "OrderBook.hpp"
 #include "OrderGenerator.hpp"
 
@@ -12,9 +15,10 @@ namespace
 constexpr std::size_t kOps = 110'000;
 constexpr std::size_t kCheckEvery = 1'000;
 
-// If a change is *meant* to alter matching behaviour, update this and say so in the commit.
-// <random> distributions are implementation-defined, so the value is libstdc++-specific.
-constexpr std::uint64_t kExpectedFingerprint = 0x248e61fc4f9417f3;
+// If a change is *meant* to alter matching behaviour, rerun with UPDATE_SNAPSHOT=1 and say so in the commit.
+// <random> distributions are implementation-defined, so the snapshot is libstdc++-specific.
+constexpr const char *kSnapshotPath = REGRESSION_SNAPSHOT_PATH;
+constexpr const char *kActualPath = "regression_snapshot.actual.txt";
 
 // returns nullptr if the book is consistent, else what's wrong with it
 const char *CheckInvariants(const OrderBook &book)
@@ -36,30 +40,48 @@ const char *CheckInvariants(const OrderBook &book)
 }
 } // namespace
 
-TEST(Regression, SeededReplayMatchesFingerprint)
+TEST(Regression, SeededReplayMatchesSnapshot)
 {
   OrderGenerator generator{GeneratorConfig{}};
   std::vector<Op> script;
   generator.Generate(kOps, script);
 
   OrderBook book;
-  Fingerprint fingerprint;
+  std::uint64_t tradeCount = 0;
+  std::uint64_t tradedQuantity = 0;
 
   for (std::size_t i = 0; i < script.size(); ++i)
   {
-    fingerprint.AddTrades(Dispatch(book, script[i]));
+    for (const Trade &trade : Dispatch(book, script[i]))
+    {
+      ++tradeCount;
+      tradedQuantity += trade.GetBidTrade().quantity_;
+    }
 
     if ((i + 1) % kCheckEvery == 0)
       if (const char *failure = CheckInvariants(book))
         FAIL() << failure << " after op " << i;
   }
 
-  fingerprint.Finish(book);
-
   if (const char *failure = CheckInvariants(book))
     FAIL() << failure << " at end of run";
 
-  EXPECT_EQ(fingerprint.Value(), kExpectedFingerprint)
-      << std::hex << "got 0x" << fingerprint.Value() << " (trades=" << std::dec << fingerprint.TradeCount()
-      << " traded qty=" << fingerprint.TradedQuantity() << " resting=" << fingerprint.RestingOrders() << ")";
+  std::ostringstream actual;
+  actual << "# trades=" << tradeCount << " traded_qty=" << tradedQuantity << '\n';
+  book.Print(actual);
+
+  if (std::getenv("UPDATE_SNAPSHOT"))
+  {
+    std::ofstream{kSnapshotPath} << actual.str();
+    return;
+  }
+
+  std::ostringstream expected;
+  expected << std::ifstream{kSnapshotPath}.rdbuf();
+
+  if (actual.str() != expected.str())
+  {
+    std::ofstream{kActualPath} << actual.str();
+    FAIL() << "book differs from the snapshot, see: diff " << kSnapshotPath << " build/" << kActualPath;
+  }
 }

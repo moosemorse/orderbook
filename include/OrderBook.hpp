@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <iosfwd>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -37,11 +38,14 @@ class OrderBook
   std::map<Price, OrderPointers, std::greater<Price>> bids_;
   std::map<Price, OrderPointers, std::less<Price>> asks_;
   std::unordered_map<OrderId, OrderEntry> orders_;
-  std::unordered_map<Price, LevelData> data_; // quantity per price, for CanFullyFill
+  // quantity per price, for CanFullyFill; per side because a bid and an ask can share a price
+  std::unordered_map<Price, LevelData> bidData_;
+  std::unordered_map<Price, LevelData> askData_;
   mutable std::mutex ordersMutex_;
-  std::thread ordersPruneThread_;
   std::condition_variable shutdownConditionVariable_;
   std::atomic<bool> shutdown_{false};
+  // declared last: members initialise in order, and the thread uses all of the above
+  std::thread ordersPruneThread_;
 
   void PruneGoodForDayOrders();
 
@@ -50,8 +54,8 @@ class OrderBook
 
   void OnOrderCancelled(const OrderPointer& order);
   void OnOrderAdded(const OrderPointer& order);
-  void OnOrderMatched(Price price, Quantity quantity);
-  void UpdateLevelData(Price price, Quantity quantity, LevelData::Action action);
+  void OnOrderMatched(Side side, Price price, Quantity quantity);
+  void UpdateLevelData(Side side, Price price, Quantity quantity, LevelData::Action action);
 
   bool CanFullyFill(Side side, Price price, Quantity quantity) const;
   bool CanMatch(Side side, Price price) const;
@@ -73,4 +77,5 @@ public:
   std::size_t Size() const;
   bool Contains(OrderId orderId) const;
   OrderBookLevelInfos GetOrderInfos() const;
+  void Print(std::ostream& out) const;
 };
