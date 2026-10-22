@@ -14,11 +14,11 @@ Roadmap toward a CV-ready "sustaining X orders/sec at Yus median / Zus p99, meas
 - [x] Run fingerprint + invariant checks (`59da94d`); since moved out of the timed bench into `tests/regression_tests.cpp`
 - [x] `orderbook_lib` static library linked by main/bench/tests; tests no longer `#include` the `.cpp` (`59da94d`)
 - [x] Bench cleanups: `OpType` everywhere, shared `kOpTypes`/`ToString`, modifies keep the order's side, `targetDepth` is both sides combined
-- [ ] Merge `feat/benchmark-harness` into `main`
+- [x] Merge `feat/benchmark-harness` into `main` (`d27e758`)
 
 ## Next: performance work, in this order
 1. [ ] **Re-record the baseline** on a quiet machine (performance governor, nothing else running): `make release && ./build/orderbook_bench --orders 5000000 --core 2`. Old baseline (5.70M/s, Cancel p50=68ns, Modify p50=76ns) was on the skewed workload - discard it. First corrected run, not under quiet conditions: 4.07M orders/sec, Add p50=175ns, Cancel p50=134ns, Modify p50=307ns.
-   - Record here: _(pending)_
+   - Record here: _(pending; record after the `fix/finding-bugs` merge, since the bug fixes changed behaviour)_
 2. [ ] **Profile** before changing anything: build `RelWithDebInfo`, `perf record -g ./build/orderbook_bench --orders 2000000 --core 2`, `perf report`; plus `perf stat -e cache-misses,instructions,cycles`. Note where time actually goes (mutex, `shared_ptr` alloc, `std::map`/`std::list` nodes, `MatchOrders`).
 3. [ ] **Suspected quick win:** `MatchOrders` does `trades.reserve(orders_.size())` on every call - reserves ~5000 `Trade`s (~160KB) per Add although most adds produce 0-1 trades. Confirm in the profile, then reserve nothing/a small constant. Behaviour unchanged, so the snapshot must match.
 4. [ ] **Housekeeping before the architecture changes** (cheaper now; the regression snapshot is the safety net):
