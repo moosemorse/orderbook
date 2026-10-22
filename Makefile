@@ -1,6 +1,6 @@
 BUILD_DIR := build
 
-.PHONY: all release clean bench
+.PHONY: all release clean bench test
 
 all:
 	cmake -S . -B $(BUILD_DIR)
@@ -13,6 +13,9 @@ release:
 # perf numbers are only meaningful from a release build - always rebuilds release first
 bench: release
 	./$(BUILD_DIR)/orderbook_bench $(ARGS)
+
+test: all
+	ctest --test-dir $(BUILD_DIR) --output-on-failure $(ARGS)
 
 clean:
 	rm -rf $(BUILD_DIR)

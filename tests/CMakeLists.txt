@@ -12,7 +12,15 @@ add_executable(
     orderbook_tests
     orderbook_tests.cpp
     regression_tests.cpp
-    api_tests.cpp
+    unit/query_tests.cpp
+    unit/add_order_tests.cpp
+    unit/fill_and_kill_tests.cpp
+    unit/fill_or_kill_tests.cpp
+    unit/good_for_day_tests.cpp
+    unit/market_tests.cpp
+    unit/cancel_order_tests.cpp
+    unit/modify_order_tests.cpp
+    unit/lifetime_tests.cpp
 )
 
 # pch.hpp lives in the repo root; the regression test uses the bench's generator
