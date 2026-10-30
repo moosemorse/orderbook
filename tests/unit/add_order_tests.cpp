@@ -13,16 +13,24 @@ TEST(AddOrder, NonCrossingOrdersRest)
   EXPECT_TRUE(book.Contains(2));
 }
 
-// TODO: we should probably throw here instead of ignoring
-TEST(AddOrder, DuplicateIdIsIgnored)
+TEST(AddOrder, DuplicateIdThrows)
 {
   OrderBook book;
   book.AddOrder(Gtc(1, Side::Buy, 100, 10));
 
-  EXPECT_TRUE(book.AddOrder(Gtc(1, Side::Sell, 100, 10)).empty());
+  EXPECT_THROW(book.AddOrder(Gtc(1, Side::Sell, 100, 10)), std::invalid_argument);
   EXPECT_EQ(book.Size(), 1u);
   EXPECT_EQ(Bids(book), (Levels{{100, 10}}));
   EXPECT_TRUE(Asks(book).empty());
+}
+
+// a zero-quantity order would rest already filled and produce a zero-quantity trade
+TEST(AddOrder, ZeroQuantityThrows)
+{
+  OrderBook book;
+  EXPECT_THROW(book.AddOrder(Gtc(1, Side::Buy, 100, 0)), std::invalid_argument);
+  EXPECT_THROW(book.AddOrder(std::make_shared<Order>(2, Side::Buy, 0)), std::invalid_argument);
+  EXPECT_EQ(book.Size(), 0u);
 }
 
 TEST(AddOrder, FullMatchEmptiesBothSides)

@@ -9,6 +9,16 @@ TEST(ModifyOrder, UnknownIdIsNoOp)
   EXPECT_EQ(book.Size(), 0u);
 }
 
+TEST(ModifyOrder, ZeroQuantityThrowsAndKeepsOriginal)
+{
+  OrderBook book;
+  book.AddOrder(Gtc(1, Side::Buy, 100, 10));
+
+  EXPECT_THROW(book.ModifyOrder(OrderModify{1, Side::Buy, 100, 0}), std::invalid_argument);
+  EXPECT_TRUE(book.Contains(1));
+  EXPECT_EQ(Bids(book), (Levels{{100, 10}}));
+}
+
 TEST(ModifyOrder, ChangesPriceAndQuantity)
 {
   OrderBook book;

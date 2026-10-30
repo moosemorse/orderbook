@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <format>
 #include <numeric>
 #include <ostream>
 #include <ranges>
@@ -126,7 +127,11 @@ Trades OrderBook::AddOrder(const OrderPointer& order)
   std::scoped_lock ordersLock{ordersMutex_};
 
   if (orders_.contains(order->GetOrderId()))
-    return {};
+    throw std::invalid_argument(std::format("Order ({}) already exists in the book.", order->GetOrderId()));
+  // would rest already filled and match for a zero-quantity trade
+  // TODO: think about better design for this maybe smart constructor etc...?
+  if (order->GetInitialQuantity() == 0)
+    throw std::invalid_argument(std::format("Order ({}) must have a non-zero quantity.", order->GetOrderId()));
 
   // market order: reprice to the worst opposite level so it sweeps the book
   const bool isMarket = order->GetOrderType() == OrderType::Market;
@@ -190,6 +195,11 @@ void OrderBook::CancelOrder(const OrderId orderId)
 // modify = cancel + re-add, so the order loses its time priority
 Trades OrderBook::ModifyOrder(const OrderModify &order)
 {
+  // checked before the cancel, or a rejected modify would lose the original
+  // TODO: think about better design for this maybe smart constructor etc...?
+  if (order.GetQuantity() == 0)
+    throw std::invalid_argument(std::format("Order ({}) must have a non-zero quantity.", order.GetOrderId()));
+
   OrderType orderType;
   {
     std::scoped_lock ordersLock{ordersMutex_};
