@@ -13,6 +13,7 @@ TEST(AddOrder, NonCrossingOrdersRest)
   EXPECT_TRUE(book.Contains(2));
 }
 
+// TODO: we should probably throw here instead of ignoring
 TEST(AddOrder, DuplicateIdIsIgnored)
 {
   OrderBook book;
