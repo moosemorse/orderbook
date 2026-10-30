@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <ctime>
+#include <format>
 #include <numeric>
+#include <ostream>
 #include <ranges>
 
 // cancel any orders that are expired i.e. at end of trading day
@@ -31,9 +33,9 @@ void OrderBook::PruneGoodForDayOrders()
 
     {
       std::unique_lock ordersLock{ordersMutex_};
-      // finish if orderbook has shutdown or shutdown signalled while waiting
-      if (shutdown_.load(std::memory_order_acquire) ||
-          shutdownConditionVariable_.wait_for(ordersLock, till) == std::cv_status::no_timeout)
+      // the predicate re-checks shutdown_, so a spurious wakeup goes back to waiting instead of exiting
+      if (shutdownConditionVariable_.wait_for(ordersLock, till,
+                                              [this] { return shutdown_; }))
         return;
     }
 
@@ -82,27 +84,30 @@ void OrderBook::CancelOrderInternal(const OrderId orderId)
     eraseOrderFromPriceLevel(asks_, order->GetPrice());
   else
     eraseOrderFromPriceLevel(bids_, order->GetPrice());
+
+  OnOrderCancelled(order);
 }
 
 // level data bookkeeping - caller must hold ordersMutex_
 void OrderBook::OnOrderCancelled(const OrderPointer& order)
 {
-  UpdateLevelData(order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
+  UpdateLevelData(order->GetSide(), order->GetPrice(), order->GetRemainingQuantity(), LevelData::Action::Remove);
 }
 
 void OrderBook::OnOrderAdded(const OrderPointer& order)
 {
-  UpdateLevelData(order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
+  UpdateLevelData(order->GetSide(), order->GetPrice(), order->GetInitialQuantity(), LevelData::Action::Add);
 }
 
-void OrderBook::OnOrderMatched(const Price price, const Quantity quantity)
+void OrderBook::OnOrderMatched(const Side side, const Price price, const Quantity quantity)
 {
-  UpdateLevelData(price, quantity, LevelData::Action::Remove);
+  UpdateLevelData(side, price, quantity, LevelData::Action::Remove);
 }
 
-void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, const LevelData::Action action)
+void OrderBook::UpdateLevelData(const Side side, const Price price, const Quantity quantity, const LevelData::Action action)
 {
-  auto&[quantity_] = data_[price];
+  auto& data = side == Side::Buy ? bidData_ : askData_;
+  auto&[quantity_] = data[price];
 
   if (action == LevelData::Action::Remove)
   {
@@ -114,7 +119,7 @@ void OrderBook::UpdateLevelData(const Price price, const Quantity quantity, cons
   }
 
   if (quantity_ == 0)
-    data_.erase(price);
+    data.erase(price);
 }
 
 Trades OrderBook::AddOrder(const OrderPointer& order)
@@ -122,10 +127,15 @@ Trades OrderBook::AddOrder(const OrderPointer& order)
   std::scoped_lock ordersLock{ordersMutex_};
 
   if (orders_.contains(order->GetOrderId()))
-    return {};
+    throw std::invalid_argument(std::format("Order ({}) already exists in the book.", order->GetOrderId()));
+  // would rest already filled and match for a zero-quantity trade
+  // TODO: think about better design for this maybe smart constructor etc...?
+  if (order->GetInitialQuantity() == 0)
+    throw std::invalid_argument(std::format("Order ({}) must have a non-zero quantity.", order->GetOrderId()));
 
   // market order: reprice to the worst opposite level so it sweeps the book
-  if (order->GetOrderType() == OrderType::Market)
+  const bool isMarket = order->GetOrderType() == OrderType::Market;
+  if (isMarket)
   {
     if (order->GetSide() == Side::Buy && !asks_.empty())
     {
@@ -168,8 +178,8 @@ Trades OrderBook::AddOrder(const OrderPointer& order)
 
   Trades trades = MatchOrders();
 
-  // FillAndKill never rests: cancel whatever didn't fill
-  if (order->GetOrderType() == OrderType::FillAndKill && !order->IsFilled())
+  // FillAndKill and market orders never rest: cancel whatever didn't fill
+  if ((isMarket || order->GetOrderType() == OrderType::FillAndKill) && !order->IsFilled())
     CancelOrderInternal(order->GetOrderId());
 
   return trades;
@@ -185,6 +195,11 @@ void OrderBook::CancelOrder(const OrderId orderId)
 // modify = cancel + re-add, so the order loses its time priority
 Trades OrderBook::ModifyOrder(const OrderModify &order)
 {
+  // checked before the cancel, or a rejected modify would lose the original
+  // TODO: think about better design for this maybe smart constructor etc...?
+  if (order.GetQuantity() == 0)
+    throw std::invalid_argument(std::format("Order ({}) must have a non-zero quantity.", order.GetOrderId()));
+
   OrderType orderType;
   {
     std::scoped_lock ordersLock{ordersMutex_};
@@ -214,6 +229,8 @@ bool OrderBook::Contains(const OrderId orderId) const
 
 OrderBookLevelInfos OrderBook::GetOrderInfos() const
 {
+  std::scoped_lock ordersLock{ordersMutex_};
+
   // returns a vector of price level : quantities
   // e.g. [{100, 15}, {99, 7}] so at price 100, there's 15 units
   const auto toLevelInfos = [](const auto& levels)
@@ -230,6 +247,23 @@ OrderBookLevelInfos OrderBook::GetOrderInfos() const
   return OrderBookLevelInfos{toLevelInfos(bids_), toLevelInfos(asks_)};
 }
 
+// one line per resting order: best price first, time priority within a level
+void OrderBook::Print(std::ostream& out) const
+{
+  std::scoped_lock ordersLock{ordersMutex_};
+
+  const auto printSide = [&out](const char* name, const auto& levels)
+  {
+    out << name << '\n';
+    for (const auto& [price, orders] : levels)
+      for (const auto& order : orders)
+        out << price << " id=" << order->GetOrderId() << " qty=" << order->GetRemainingQuantity() << '\n';
+  };
+
+  printSide("BIDS", bids_);
+  printSide("ASKS", asks_);
+}
+
 bool OrderBook::CanFullyFill(const Side side, const Price price, Quantity quantity) const
 {
   if (!CanMatch(side, price))
@@ -238,7 +272,7 @@ bool OrderBook::CanFullyFill(const Side side, const Price price, Quantity quanti
   // CanMatch passed, so the opposite side isn't empty
   const Price threshold = side == Side::Buy ? asks_.begin()->first : bids_.begin()->first;
 
-  for (const auto& [levelPrice, levelData] : data_)
+  for (const auto& [levelPrice, levelData] : side == Side::Buy ? askData_ : bidData_)
   {
     if ((side == Side::Buy && threshold > levelPrice) || (side == Side::Sell && threshold < levelPrice))
       continue;
@@ -291,13 +325,11 @@ Trades OrderBook::MatchOrders()
   };
 
   // price is taken by value: the caller's is a reference to the map node's key, which erase() frees
-  // also update any other data structures here that store info about price level e.g. data_
-  const auto eraseLevelIfEmpty = [this](auto& levels, const OrderPointers& level, const Price price)
+  const auto eraseLevelIfEmpty = [](auto& levels, const OrderPointers& level, const Price price)
   {
     if (!level.empty())
       return;
     levels.erase(price);
-    data_.erase(price);
   };
 
   while (!bids_.empty() && !asks_.empty())
@@ -324,8 +356,8 @@ Trades OrderBook::MatchOrders()
       trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity},
                              TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}});
 
-      OnOrderMatched(bid->GetPrice(), quantity);
-      OnOrderMatched(ask->GetPrice(), quantity);
+      OnOrderMatched(Side::Buy, bid->GetPrice(), quantity);
+      OnOrderMatched(Side::Sell, ask->GetPrice(), quantity);
     }
 
     eraseLevelIfEmpty(bids_, bids, bidPrice);
@@ -340,7 +372,11 @@ OrderBook::OrderBook() : ordersPruneThread_{[this] { PruneGoodForDayOrders(); }}
 
 OrderBook::~OrderBook()
 {
-  shutdown_.store(true, std::memory_order_release);
+  {
+    // under the lock so the store can't land between the prune thread's check and its wait
+    std::scoped_lock ordersLock{ordersMutex_};
+    shutdown_ = true;
+  }
   shutdownConditionVariable_.notify_one();
   ordersPruneThread_.join();
 }

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <exception>
 #include <format>
 #include <list>
 #include <memory>
+#include <stdexcept>
 
 #include "Aliases.hpp"
 #include "Constants.hpp"
